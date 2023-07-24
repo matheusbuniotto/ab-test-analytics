@@ -37,3 +37,9 @@ Esperamos que a versão da landing page com a prova social tenha uma taxa de con
 - Preparação dos dados (doing)
 - Teste estatístico para validar ou invalidar a hipótese inicial
 - Análise dos resultados
+
+### Referências
+[Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing - Ron Kohavi (Author), Diane Tang (Author), Ya Xu (Author)](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV)
+[Detecting and avoiding bucket imbalance in A/B tests - Twitter Engineering Blog](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests)
+
+
