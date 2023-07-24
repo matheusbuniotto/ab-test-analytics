@@ -1,8 +1,7 @@
 # Análise de teste AB
+Nesse pequeno projeto serão utilizados os dados disponíveis no Kaggle, onde temos dados de um teste AB realizado entre 2 variações de uma landing page em um site confidencial. Para tornar o problema mais tangível, irei criar uma hipótese imaginária para tornar essa análise mais tangível. Então, suponhamos que recebemos a seguinte demanda do nosso product manager:
 
 ### Definição do Problema
-Nesse pequeno projeto serão utilizados os dados disponíveis no Kaggle, onde temos dados de um teste AB realizado entre 2 variações de uma landing page em um site confidencial. 
-Para tornar o problema mais tangível, irei criar uma hipótese imaginária para tornar essa análise mais tangível. Então, suponhamos que recebemos a seguinte demanda do nosso product manager:
 ```
 Olá, Matheus! 
 Estou escrevendo para você hoje para discutir uma hipótese para um teste A/B em uma landing page do nosso site.
