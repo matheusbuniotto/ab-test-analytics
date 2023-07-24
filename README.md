@@ -30,7 +30,7 @@ Vamos criar duas versões da landing page: uma com uma prova social e outra sem.
 **Ganho esperado:**
 Esperamos que a versão da landing page com a prova social tenha uma taxa de conversão mais alta do que a versão sem. Isso ocorre porque a prova social é uma forma de mostrar aos visitantes que outras pessoas já compraram o produto e gostaram dele. Isso pode ajudar a construir confiança e credibilidade com os visitantes, e fazê-los mais propensos a comprar também.
 
-Etapas:
+### Etapas:
 - Definição do problema ✅
 - Análise inicial dos dados ✅
 - Entendimento das populações ✅
