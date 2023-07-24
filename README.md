@@ -5,7 +5,7 @@ Nesse pequeno projeto serão utilizados os dados disponíveis no Kaggle, onde te
 Para tornar o problema mais tangível, irei criar uma hipótese imaginária para tornar essa análise mais tangível. Então, suponhamos que recebemos a seguinte demanda do nosso product manager:
 ```
 Olá, Matheus! 
-Estou escrevendo para você hoje para discutir uma hipótese para um teste A/B em uma landing page de um website.
+Estou escrevendo para você hoje para discutir uma hipótese para um teste A/B em uma landing page do nosso site.
 A minha hipótese é que adicionar uma prova social à landing page aumentará a taxa de conversão.
 
 Para testar essa hipótese, criarei duas versões da landing page: uma com uma prova social e outra sem. Vou distribuir as duas versões da landing page para um subconjunto dos nossos visitantes e comparar as taxas de conversão entre as duas versões.
