@@ -1,5 +1,8 @@
 import numpy as np
+import pandas as pd
 import scipy.stats as stats
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def srm_test(control_count: int, treatment_count: int, treshold_p: float):
     """
@@ -31,3 +34,89 @@ def srm_test(control_count: int, treatment_count: int, treshold_p: float):
         print(f"O teste é inválido por conta de um desbalanço entre as populações. Valor-p > {treshold_p}")
     else:
         print(f"O teste é válido: valor-p < {treshold_p}.")
+
+
+
+def calculate_ci(data, group_column, converted_column, confidence=0.95):
+    """
+    Calcula o intervalo de confiança para a média em cada grupo.
+
+    Parâmetros:
+        data (DataFrame): DataFrame contendo os dados.
+        group_column (str): Nome da coluna com os buckets.
+        convert_column (str): Nome da coluna que representa os dados de conversão (binário).
+        confiança (float, opcional): Nível de confiança para o cálculo do intervalo. Por padrão deixamos em 0,95
+
+    Retorna:
+        DataFrame: DataFrame com os grupos, média dos dados convertidos, intervalos de confiança e porcentagens de erro.
+    """
+    result = []
+
+    for group_name, group_data in data.groupby(group_column)[converted_column]:
+        n = len(group_data)
+        mean = group_data.mean()
+        std_err = stats.sem(group_data)
+        h = std_err * stats.t.ppf((1 + confidence) / 2, n - 1)
+
+        lower_bound = mean - h
+        upper_bound = mean + h
+
+        result.append({
+            'Group': group_name,
+            'Mean Conversion Rate': round(mean, 4),
+            'Confidence Interval': f"[{round(lower_bound, 4)} ({(lower_bound / mean - 1) * 100:.2f}%), {round(upper_bound, 4)} ({(upper_bound / mean - 1) * 100:.2f}%)]",
+        })
+
+    result_df = pd.DataFrame(result)
+    return result_df
+
+
+
+
+def perform_ab_test_analysis(data):
+    """
+    Realiza a análise de teste A/B para verificar se a diferença entre os grupos é estatisticamente diferente.
+
+    Parâmetros:
+        data: DataFrame com colunas group e converted representando os grupos dos buckets e a coluna binária de conversão.
+
+    Retorna:
+        DataFrame: DataFrame com os grupos, média dos dados convertidos, intervalos de confiança e porcentagens de erro.
+        
+        Nenhum: A função printa os resultados do teste, incluindo a estatística Qui-quadrado, valor-p e conclusão.
+              Ele também printa as taxas de conversão, seus erros padrão correspondentes, erros máximos e mínimos para cada grupo.
+              Além disso, ele plota as taxas de conversão para cada grupo com barras de erro.
+    """
+
+    # Cria tabela cruzada 
+    cross_table = pd.crosstab(data['group'], data['converted'])
+
+    # Realiza o teste chi2
+    chi2_stat, p_value, dof, expected = stats.chi2_contingency(cross_table)
+
+
+    # Printa os resultados 
+    print(f"Chi-square statistic: {chi2_stat:.4f}")
+    print(f"P-value: {p_value:.4f}")
+
+    if p_value < 0.05:
+        print("Os grupos possuem conversões estatisticamente diferentes.")
+    else:
+        print("Os grupos NÃO posuem conversões estatisticamente diferentes.")
+
+    # Calcula a conversão e erro
+    control_rate = cross_table.iloc[0, 1] / cross_table.iloc[0].sum()
+    treatment_rate = cross_table.iloc[1, 1] / cross_table.iloc[1].sum()
+
+    control_std = (control_rate * (1 - control_rate) / cross_table.iloc[0].sum()) ** 0.5
+    treatment_std = (treatment_rate * (1 - treatment_rate) / cross_table.iloc[1].sum()) ** 0.5
+    
+    # Plota o gráfico de barras com erros
+    plt.bar(['Control', 'Treatment'], [control_rate, treatment_rate], yerr=[control_std, treatment_std], capsize=10)
+    plt.ylabel('Conversion Rate')
+    plt.title('Conversion Rate Comparison between Control and Treatment Groups')
+    plt.show()
+    # Calcula o intervalo de confiança do erro
+    return calculate_ci(data, "group", "converted")
+
+    

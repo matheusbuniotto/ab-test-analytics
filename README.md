@@ -33,9 +33,9 @@ Esperamos que a versão da landing page com a prova social tenha uma taxa de con
 - Definição do problema ✅
 - Análise inicial dos dados ✅
 - Entendimento das populações ✅
+- Preparação dos dados ✅
 - Teste de SRM (Sample Ratio Missmatch), para detectar possíveis problemas com a distribuição das populações do teste. ✅
-- Preparação dos dados (doing)
-- Teste estatístico para validar ou invalidar a hipótese inicial
+- Testes estatístico para validar ou invalidar a hipótese inicial
 - Análise dos resultados
 
 ### Referências
