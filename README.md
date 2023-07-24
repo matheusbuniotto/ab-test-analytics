@@ -2,7 +2,7 @@
 
 ### Definição do Problema
 Nesse pequeno projeto serão utilizados os dados disponíveis no Kaggle, onde temos dados de um teste AB realizado entre 2 variações de uma landing page em um site confidencial. Para tornar o problema mais tangível, irei criar uma hipótese imaginária para tornar essa análise mais tangível. Para isso, suponhamos que recebemos a seguinte demanda do nosso product manager:
-
+```
 Olá, Matheus! 
 Estou escrevendo para você hoje para discutir uma hipótese para um teste A/B em uma landing page de um website. A minha hipótese é que adicionar uma prova social à landing page aumentará a taxa de conversão.
 
@@ -15,6 +15,9 @@ Aqui está um exemplo de como eu usaria a prova social nessa landing page:
 "O nosso produto foi recomendado pela Forbes, a CNN e a The New York Times."
 "Temos mais de 1 milhão de clientes satisfeitos."
 Acredito que a prova social pode ser uma ferramenta poderosa para melhorar as taxas de conversão. Estou animado para testar essa hipótese e ver os resultados.
+```
+
+Bom, agora é a hora de destacar o que temos até então:
 
 **Hipótese:**
 Adicionar uma prova social à landing page aumentará a taxa de conversão.
