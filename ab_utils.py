@@ -120,3 +120,60 @@ def perform_ab_test_analysis(data):
     return calculate_ci(data, "group", "converted")
 
     
+    
+def get_obbs_diff(boot_sample):
+    control_sample = boot_sample[boot_sample['group'] == 'control']['converted']
+    treatment_sample = boot_sample[boot_sample['group'] == 'treatment']['converted']
+    boot_diff = treatment_sample.mean() - control_sample.mean()
+    return boot_diff, control_sample.mean(), treatment_sample.mean()
+
+def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
+    """
+    Realiza o teste Bootstrap A/B para verificar se a diferença entre os grupos é estatisticamente diferente.
+
+    Parâmetros:
+        ab_df_uniques (DataFrame): DataFrame contendo os dados únicos do usuário com as colunas 'grupo' e 'convertido'.
+        n_bootstraps (int, opcional): Número de iterações de bootstrap. O padrão é 1000.
+        confiança (float, opcional): Nível de confiança para o cálculo do intervalo. O padrão é 0,95.
+
+    retorna:
+        Nada: a função plota a distribuição Bootstrap da diferença entre os grupos de tratamento e controle
+              e imprime o intervalo de confiança para as diferenças observadas.
+              Ele também imprime o valor-p e conclui se o teste é estatisticamente diferente ou não.
+    """
+
+    boot_mean = []
+    control_mean = []
+    treatment_mean = []
+
+    # Bootstrap Sampling to get the test statistic distribution
+    for i in range(n_bootstraps):
+        boot_sample = ab_df_uniques.sample(frac=1, replace=True)
+        boot_diff, boot_mean_control, boot_mean_treatment = get_obbs_diff(boot_sample)
+        boot_mean.append(boot_diff)
+        control_mean.append(boot_mean_control)
+        treatment_mean.append(boot_mean_treatment)
+
+    # Calculate the confidence interval based on the desired percentage
+    confidence_interval = np.percentile(boot_mean, [(1 - confidence) * 100 / 2, (1 + confidence) * 100 / 2])
+
+    # Plota o gráfico normalizado das médias
+    bootstrap_plot = pd.DataFrame({"controle": control_mean, "tratamento": treatment_mean})
+    bootstrap_plot.plot(kind='kde')
+    plt.show()
+
+    
+    # Calcula as diferenças observadas
+    original_diff, original_mean_control, original_mean_treatment = get_obbs_diff(ab_df_uniques)
+
+    # Calcula as diferenças entre 
+    p_value = np.mean(np.array(boot_mean) > original_diff)
+
+    print(f"Bootstrap Diferença Observada: {original_diff:.4f}")
+    print(f"p-value: {p_value:.4f}")
+
+    # Checa se o teste é valido de acordo com o valor p
+    if p_value < (1 - confidence):
+        print("Os grupos possuem conversões estatisticamente diferentes.")
+    else:
+        print("Os grupos NÃO posuem conversões estatisticamente diferentes.")
