@@ -114,7 +114,7 @@ def perform_ab_test_analysis(data):
     # Plota o gráfico de barras com erros
     plt.bar(['Control', 'Treatment'], [control_rate, treatment_rate], yerr=[control_std, treatment_std], capsize=10)
     plt.ylabel('Conversion Rate')
-    plt.title('Conversion Rate Comparison between Control and Treatment Groups')
+    plt.title('Conversion Rate - Controle vs Tratamento')
     plt.show()
     # Calcula o intervalo de confiança do erro
     return calculate_ci(data, "group", "converted")
