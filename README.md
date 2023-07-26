@@ -35,7 +35,7 @@ Esperamos que a versão da landing page com a prova social tenha uma taxa de con
 - Entendimento das populações ✅
 - Preparação dos dados ✅
 - Teste de SRM (Sample Ratio Missmatch), para detectar possíveis problemas com a distribuição das populações do teste. ✅
-- Testes estatístico para validar ou invalidar a hipótese inicial (doing)
+- Testes estatístico para validar ou invalidar a hipótese inicial ✅
 - Análise dos resultados
 
 ### Referências
