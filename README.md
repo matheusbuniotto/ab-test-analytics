@@ -40,6 +40,73 @@ Esperamos que a versão da landing page com a prova social tenha uma taxa de con
 - Análise dos resultados 
 
 ### Análise e conclusões
+#### 1. Entendimento dos dados
+De início, vamos entender como os dados estão dispostos.
+A tabela possui os seguintes campos:
+```
+Nome do dataframe: ab_df
+ #   Column        Non-Null Count   Dtype  Descrição
+---  ------        --------------   ----- 
+ 0   user_id       294478 non-null  int64  Representa o id único do usuário 
+ 1   timestamp     294478 non-null  object timestamp do momento do acesso do usuário
+ 2   group         294478 non-null  object grupo de segmentação do teste, podendo ser teste ou controle (treatment / control)
+ 3   landing_page  294478 non-null  object representa a landing page apresentada ao usuário, dado que é dependente do grupo em que ele se encontra
+ 4   converted     294478 non-null  int64  valor binário que informa se o usuário converteu ou não (1 ou 0)
+```
+Tamanho: (294478 linhas, 5 colunas)
+
+Usando a função `ab_df.duplicated().sum()` temos 0 linhas duplicadas
+
+Analisando os dados de maneira geral, estamos interessados em verificar se houve ou não um ganho na taxa de conversão da variante do tratamento, vamos observar em linhas gerais como está disposta a taxa de conversão em cada grupo e no geral.
+
+```
+Conversion Rate Geral:  0.1197
+Conversion Rate Controle:  0.1204
+Conversion Rate Tratamento:  0.1189
+```
+
+Anteriormente checamos se não havia nenhuma linha duplicada, agora vamos checar se não houve vazamento ou duplicação de usuários, já que 1 usuário só pode estar em 1 dos dois grupos (teste ou controle) e além disso, a modelagem de nossa tabela faz com que cada linha represente apenas um usuário, portanto vamos remover os usuários duplicados.
+
+#### 2. Limpeza e preparação dos dados
+
+`ab_df['user_id'].duplicated().sum()`
+`ab_df['user_id'].duplicated().sum() / len(ab_df)`
+
+Temos 3894 usuários duplicados em nosso dataset, representando cerca de 1,3% do total. Por conta do baixo volume e não termos acesso as regras de negócio/buckets que foram utilizadas no dataset disponibilizado, optei por remover esses usuários e criar um novo dataset sem eles.
+
+```
+### Cria lista com usuários duplicados (user_id)
+ids_duplicados = ab_df['user_id'].value_counts().sort_values()
+
+### Cria uma lista com os user_id com > 1 ocorrência
+ids_duplicados = ids_duplicados[ids_duplicados.values > 1].index 
+
+### Cria novo dataframe sem os usuários duplicados
+ab_df_uniques = ab_df[ab_df["user_id"].isin(ids_duplicados) == False]
+
+### Remove colunas desnecessárias para o teste
+ab_df_uniques = ab_df_uniques.drop(columns="timestamp")`
+```
+
+#### 3. Teste de Sample Ratio Missmatch
+Sample Ratio Mismatch, acontece em testes de hipóteses quando as amostras comparadas têm proporções diferentes entre os grupos, no nosso caso controle e tratamento. Isso pode afetar a validade dos resultados do teste. Por isso, é importante garantir que as amostras estejam balanceadsa e sejam representativas para obter conclusões confiáveis.
+
+Para garantir que essas proporções estão balanceadas utilizarei a função que `Srm_test` que utiliza o qui-quadrado para medir se essa relação entre as amostras causa um impacto significativo no experimento:
+
+```
+# Roda a função para verificar o desbalanço entre grupos (Sample Ratio Missmatch)
+srm_test(control_count, treatment_count, 0.005)
+
+```
+Diff. Entre Buckets: 104 usuários
+Ratio: 0.9993
+Chi-square: 0.0377
+P-value: 0.8460
+O teste é válido: valor-p > 0.005.
+
+
+#### Testes estatísticos
+
 
 ### Referências
 [Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing - Ron Kohavi (Author), Diane Tang (Author), Ya Xu (Author)](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV)
