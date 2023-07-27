@@ -184,7 +184,7 @@ def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
 
 
 
-# Abordagem Baesyana    
+# Abordagem Bayesina
 def h(a, b, c, d):
     num = lgamma(a + c) + lgamma(b + d) + lgamma(a + b) + lgamma(c + d)
     den = lgamma(a) + lgamma(b) + lgamma(c) + lgamma(d) + lgamma(a + b + c + d)
@@ -211,7 +211,7 @@ from scipy.stats import beta
 
 def calc_beta_peak(a, b):
     """
-    Calcula a moda (pico) da distribuição Beta.
+    Calcula a moda (peak) da distribuição Beta.
 
     Parâmetros:
         a (float): Parâmetro alfa da distribuição Beta.
@@ -222,7 +222,7 @@ def calc_beta_peak(a, b):
     """
     return (a-1)/(a+b-2)
 
-def baesyan_plot(betas, names, data, group_column, converted_column, linf=0, lsup=1):
+def bayesian_plot(betas, names, data, group_column, converted_column, linf=0, lsup=1):
     """
     Plota as curvas da distribuição Beta e da Estimativa de Densidade de Kernel (KDE) para dados de teste A/B.
 

@@ -108,7 +108,7 @@ O teste é válido: valor-p > 0.005.
 #### 4. Testes estatísticos
 Vou utilizar duas abordages para exemplicação (bootstrap e baesyiana):
 
-##### Bootstrap
+#### 4.1 Bootstrap
 O método Bootstrap é uma técnica estatística de reamostragem com reposição que permite realizar inferências sobre uma população sem assumir uma distribuição específica para os dados. 
 
 Utilizando as funções criadas:
@@ -122,17 +122,49 @@ calculate_ci(ab_df_uniques, "group", "converted") # função que calcula o inter
 
 ![Alt text](plots/bootstrap_plot.png)\
 
-Bootstrap Diferença Observada: -0.0014
-Intervalo de confiança: [-0.00374671  0.001125  ]
-p-value: 0.5200
-Os grupos NÃO posuem conversões estatisticamente diferentes.
+Bootstrap Diferença Observada: -0.0014\
+Intervalo de confiança: [-0.00374671  0.001125  ]\
+p-value: 0.5200\
+Os grupos NÃO posuem conversões estatisticamente diferentes.\
 ```
 Group	     Mean Conversion Rate	Confidence Interval
 control	     0.1202	                [0.1185 (-1.40%), 0.1219 (1.40%)]
 treatment    0.1187	                [0.1171 (-1.41%), 0.1204 (1.41%)]
 ```
+
+
+#### 4.1 Bayes 
+A abordagem Bayesiana para testes A/B é uma maneira alternativa de realizar experimentos e análises comparativas entre grupos, com base na teoria da probabilidade Bayesiana. Ao contrário dos métodos frequentistas tradicionais, que se concentram em valores pontuais e limites de confiança, a abordagem Bayesiana considera a incerteza dos parâmetros em termos de distribuições de probabilidade.
+
+Utilizando as funções criadas:
+```
+# Calcula o beta para os buckets
+beta_C = beta(ab_df_uniques[ab_df_uniques['group'] == 'control']['converted'].sum() + 1, (1 - ab_df_uniques[ab_df_uniques['group'] == 'control']['converted']).sum() + 1)
+beta_T = beta(ab_df_uniques[ab_df_uniques['group'] == 'treatment']['converted'].sum() + 1, (1 - ab_df_uniques[ab_df_uniques['group'] == 'treatment']['converted']).sum() + 1)
+
+#Calculando o ganho do tramtamento
+lift=(beta_T.mean()-beta_C.mean())/beta_C.mean()
+
+#Calcula a probabilidade estatística do ganho visto no tste
+prob=calc_prob_between(beta_T, beta_C)
+
+bayesian_plot([beta_C, beta_T], names=["controle", "tratamento"], data=ab_df_uniques, group_column='group', converted_column='converted', linf=0.1, lsup=0.14)
+
+# Printa o resultado
+if lift < 0:
+    print (f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de perder para o controle.")
+else:
+    print (f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de ganhar do controle.")
+                
+
+```
+![Alt text](plots/bayes.png)
+O Tratamento teve um efeito de -1.20% na métrica selecionada com 11.6% de probabilidade de perder para o controle.
+
+#### 5. Conclusões
+Não conseguimos provar que o tratamento teve um efeito estatísticamente válido em relação ao grupo de controle, portanto podemos afirmar que não há diferença entre os grupos e que a landing page nova não traz uma melhora significativa na métrica selecionada (conversão).
+
 ### Referências
 [Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing - Ron Kohavi (Author), Diane Tang (Author), Ya Xu (Author)](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV)
 [Detecting and avoiding bucket imbalance in A/B tests - Twitter Engineering Blog](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests)
-
-
+[Bayesian AB Test with Python](https://towardsdatascience.com/bayesian-a-b-testing-with-python-the-easy-guide-d638f89e0b8a)
