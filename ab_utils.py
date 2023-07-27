@@ -138,7 +138,7 @@ def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
         confiança (float, opcional): Nível de confiança para o cálculo do intervalo. O padrão é 0,95.
 
     retorna:
-        Nada: a função plota a distribuição Bootstrap da diferença entre os grupos de tratamento e controle
+        None: a função plota a distribuição Bootstrap da diferença entre os grupos de tratamento e controle
               e imprime o intervalo de confiança para as diferenças observadas.
               Ele também imprime o valor-p e conclui se o teste é estatisticamente diferente ou não.
     """
