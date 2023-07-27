@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats as stats
 import matplotlib.pyplot as plt
+from math import lgamma
 import seaborn as sns
 
 def srm_test(control_count: int, treatment_count: int, treshold_p: float):
@@ -160,6 +161,8 @@ def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
     # Plota o gráfico normalizado das médias
     bootstrap_plot = pd.DataFrame({"controle": control_mean, "tratamento": treatment_mean})
     bootstrap_plot.plot(kind='kde')
+    plt.title("Distribuição")
+
     plt.show()
 
     
@@ -177,3 +180,72 @@ def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
         print("Os grupos possuem conversões estatisticamente diferentes.")
     else:
         print("Os grupos NÃO posuem conversões estatisticamente diferentes.")
+
+
+
+# Abordagem Baesyana    
+def h(a, b, c, d):
+    num = lgamma(a + c) + lgamma(b + d) + lgamma(a + b) + lgamma(c + d)
+    den = lgamma(a) + lgamma(b) + lgamma(c) + lgamma(d) + lgamma(a + b + c + d)
+    return np.exp(num - den)
+
+def g0(a, b, c):    
+    return np.exp(lgamma(a + b) + lgamma(a + c) - (lgamma(a + b + c) + lgamma(a)))
+
+
+def hiter(a, b, c, d):
+    while d > 1:
+        d -= 1
+        yield h(a, b, c, d) / d
+
+def g(a, b, c, d):
+    return g0(a, b, c) + sum(hiter(a, b, c, d))
+
+def calc_prob_between(beta1, beta2):
+    return g(beta1.args[0], beta1.args[1], beta2.args[0], beta2.args[1])
+
+
+# Plota a distribuição
+from scipy.stats import beta
+
+def calc_beta_peak(a, b):
+    """
+    Calcula a moda (pico) da distribuição Beta.
+
+    Parâmetros:
+        a (float): Parâmetro alfa da distribuição Beta.
+        b (float): Parâmetro beta da distribuição Beta.
+
+    Retorna:
+        float: A moda (pico) da distribuição Beta.
+    """
+    return (a-1)/(a+b-2)
+
+def baesyan_plot(betas, names, data, group_column, converted_column, linf=0, lsup=1):
+    """
+    Plota as curvas da distribuição Beta e da Estimativa de Densidade de Kernel (KDE) para dados de teste A/B.
+
+    Parâmetros:
+        betas (list): Lista de objetos representando as distribuições Beta para cada grupo.
+        names (list): Lista de strings representando os nomes de cada grupo.
+        linf (float, opcional): Limite inferior do eixo x para o gráfico. O padrão é 0.
+        lsup (float, opcional): Limite superior do eixo x para o gráfico. O padrão é 1.
+
+    Retorna:
+        None: A função plota as curvas KDE para as distribuições Beta.
+    """
+    x = np.linspace(linf, lsup, 1000)
+    for f, name in zip(betas, names):
+        y_mode = calc_beta_peak(f.args[0], f.args[1])
+        y_var = f.var()  # the variance of the Beta distribution
+        sns.kdeplot(f.rvs(1000), label=f"{name} sample, conversion rate: {y_mode:.4f} $\pm$ {y_var:.8}")
+        
+    plt.xlabel('Conversion Rate')
+    plt.ylabel('Density')
+    plt.title("Distribuição")
+    #plt.xlim(0.11, 0.13)
+
+    # Move the legend outside of the graph and set the format
+    plt.legend(bbox_to_anchor=(0.5, -0.3), loc="lower center", borderaxespad=0, frameon=False)
+
+    plt.show()
