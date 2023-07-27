@@ -158,7 +158,7 @@ else:
                 
 
 ```
-![Alt text](plots/bayes.png)
+![Alt text](plots/bayes.png)\
 
 O Tratamento teve um efeito de -1.20% na métrica selecionada com 11.6% de probabilidade de perder para o controle.
 
