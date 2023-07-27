@@ -29,6 +29,7 @@ Vamos criar duas versões da landing page: uma com uma prova social e outra sem.
 **Ganho esperado:**
 Esperamos que a versão da landing page com a prova social tenha uma taxa de conversão mais alta do que a versão sem. Isso ocorre porque a prova social é uma forma de mostrar aos visitantes que outras pessoas já compraram o produto e gostaram dele. Isso pode ajudar a construir confiança e credibilidade com os visitantes, e fazê-los mais propensos a comprar também.
 
+
 ### Etapas:
 - Definição do problema ✅
 - Análise inicial dos dados ✅
@@ -36,7 +37,9 @@ Esperamos que a versão da landing page com a prova social tenha uma taxa de con
 - Preparação dos dados ✅
 - Teste de SRM (Sample Ratio Missmatch), para detectar possíveis problemas com a distribuição das populações do teste. ✅
 - Testes estatístico para validar ou invalidar a hipótese inicial ✅
-- Análise dos resultados
+- Análise dos resultados 
+
+### Análise e conclusões
 
 ### Referências
 [Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing - Ron Kohavi (Author), Diane Tang (Author), Ya Xu (Author)](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV)
