@@ -105,9 +105,32 @@ P-value: 0.8460\
 O teste é válido: valor-p > 0.005.
 
 
-#### Testes estatísticos
+#### 4. Testes estatísticos
+Vou utilizar duas abordages para exemplicação (bootstrap e baesyiana):
+
+##### Bootstrap
+O método Bootstrap é uma técnica estatística de reamostragem com reposição que permite realizar inferências sobre uma população sem assumir uma distribuição específica para os dados. 
+
+Utilizando as funções criadas:
+
+```
+bootstrap_ab_test(ab_df_uniques) # função que roda o teste de bootstrap e plota o gráfico normalizado
+calculate_ci(ab_df_uniques, "group", "converted") # função que calcula o intervalo de confiança
+
+```
 
 
+![Alt text](plots/bootstrap_plot.png)\
+
+Bootstrap Diferença Observada: -0.0014
+Intervalo de confiança: [-0.00374671  0.001125  ]
+p-value: 0.5200
+Os grupos NÃO posuem conversões estatisticamente diferentes.
+```
+Group	     Mean Conversion Rate	Confidence Interval
+control	     0.1202	                [0.1185 (-1.40%), 0.1219 (1.40%)]
+treatment    0.1187	                [0.1171 (-1.41%), 0.1204 (1.41%)]
+```
 ### Referências
 [Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing - Ron Kohavi (Author), Diane Tang (Author), Ya Xu (Author)](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV)
 [Detecting and avoiding bucket imbalance in A/B tests - Twitter Engineering Blog](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests)

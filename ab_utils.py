@@ -31,10 +31,10 @@ def srm_test(control_count: int, treatment_count: int, treshold_p: float):
     print(f"Chi-square: {chi2:.4f}")
     print(f"P-value: {p_value:.4f}")
 
-    if p_value < treshold_p:
-        print(f"O teste é inválido por conta de um desbalanço entre as populações. Valor-p > {treshold_p}")
+    if p_value > treshold_p:
+        print(f"O teste é válido: valor-p > {treshold_p}.")
     else:
-        print(f"O teste é válido: valor-p < {treshold_p}.")
+        print(f"O teste é inválido por conta de um desbalanço entre as populações. Valor-p < {treshold_p}")
 
 
 
@@ -147,7 +147,7 @@ def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
     control_mean = []
     treatment_mean = []
 
-    # Bootstrap Sampling to get the test statistic distribution
+    # Bootstrap Sampling e coleta as estatísticas
     for i in range(n_bootstraps):
         boot_sample = ab_df_uniques.sample(frac=1, replace=True)
         boot_diff, boot_mean_control, boot_mean_treatment = get_obbs_diff(boot_sample)
@@ -155,7 +155,7 @@ def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
         control_mean.append(boot_mean_control)
         treatment_mean.append(boot_mean_treatment)
 
-    # Calculate the confidence interval based on the desired percentage
+    # Calcula o intervalo de confiança
     confidence_interval = np.percentile(boot_mean, [(1 - confidence) * 100 / 2, (1 + confidence) * 100 / 2])
 
     # Plota o gráfico normalizado das médias
@@ -173,6 +173,7 @@ def bootstrap_ab_test(ab_df_uniques, n_bootstraps=1000, confidence=0.95):
     p_value = np.mean(np.array(boot_mean) > original_diff)
 
     print(f"Bootstrap Diferença Observada: {original_diff:.4f}")
+    print(f"Intervalo de confiança: {confidence_interval}")
     print(f"p-value: {p_value:.4f}")
 
     # Checa se o teste é valido de acordo com o valor p
