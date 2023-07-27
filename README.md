@@ -37,7 +37,7 @@ Esperamos que a versão da landing page com a prova social tenha uma taxa de con
 - Preparação dos dados ✅
 - Teste de SRM (Sample Ratio Missmatch), para detectar possíveis problemas com a distribuição das populações do teste. ✅
 - Testes estatístico para validar ou invalidar a hipótese inicial ✅
-- Análise dos resultados 
+- Análise dos resultados ✅
 
 ### Análise e conclusões
 #### 1. Entendimento dos dados
@@ -152,13 +152,14 @@ bayesian_plot([beta_C, beta_T], names=["controle", "tratamento"], data=ab_df_uni
 
 # Printa o resultado
 if lift < 0:
-    print (f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de perder para o controle.")
+    print(f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de perder para o controle.")
 else:
-    print (f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de ganhar do controle.")
+    print(f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de ganhar do controle.")
                 
 
 ```
 ![Alt text](plots/bayes.png)
+
 O Tratamento teve um efeito de -1.20% na métrica selecionada com 11.6% de probabilidade de perder para o controle.
 
 #### 5. Conclusões
