@@ -98,10 +98,10 @@ Para garantir que essas proporções estão balanceadas utilizarei a função qu
 srm_test(control_count, treatment_count, 0.005)
 
 ```
-Diff. Entre Buckets: 104 usuários
-Ratio: 0.9993
-Chi-square: 0.0377
-P-value: 0.8460
+Diff. Entre Buckets: 104 usuários\
+Ratio: 0.9993\
+Chi-square: 0.0377\
+P-value: 0.8460\
 O teste é válido: valor-p > 0.005.
 
 
