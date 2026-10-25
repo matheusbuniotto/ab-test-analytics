@@ -1,171 +1,226 @@
-# Análise de teste AB
-Nesse pequeno projeto serão utilizados os dados disponíveis no Kaggle, onde temos dados de um teste AB realizado entre 2 variações de uma landing page em um site confidencial. Para tornar o problema mais tangível, irei criar uma hipótese imaginária para tornar essa análise mais tangível. Então, suponhamos que recebemos a seguinte demanda do nosso product manager:
+# Análise de Teste A/B: Prova Social em Landing Page (+ `tea-tasting` & `cluster-experiments`)
 
-### Definição do Problema
-```
-Olá, Matheus! 
-Estou escrevendo para você hoje para discutir uma hipótese para um teste A/B em uma landing page do nosso site.
-A minha hipótese é que adicionar uma prova social à landing page aumentará a taxa de conversão.
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Methodology](https://img.shields.io/badge/M%C3%A9todos-Frequentista%20%7C%20Bootstrap%20%7C%20Bayesiano-2B5C8F)
+![tea-tasting](https://img.shields.io/badge/Valida%C3%A7%C3%A3o-tea--tasting-D95F02)
+![cluster-experiments](https://img.shields.io/badge/Clusterizado%20%26%20Controle%20Sint%C3%A9tico-cluster--experiments-1B9E77)
 
-Para testar essa hipótese, criarei duas versões da landing page: uma com uma prova social e outra sem. Vou distribuir as duas versões da landing page para um subconjunto dos nossos visitantes e comparar as taxas de conversão entre as duas versões.
+🇺🇸 [English version (Default)](README.md)
 
-Espero que a versão da landing page com a prova social tenha uma taxa de conversão mais alta do que a versão sem. Isso ocorre porque a prova social é uma forma de mostrar aos visitantes que outras pessoas já compraram o produto e gostaram dele. Isso pode ajudar a construir confiança e credibilidade com os visitantes, e fazê-los mais propensos a comprar também.
+Um projeto completo de experimentação sobre dados reais ([Kaggle](https://www.kaggle.com/datasets/zhangluyuan/ab-testing), ~294 mil usuários): auditoria de qualidade e vazamento entre grupos, verificação de Sample Ratio Mismatch (SRM), três paradigmas estatísticos (frequentista, bootstrap não-paramétrico e Bayesiano), validação cruzada e curva de poder / MDE com [`tea-tasting`](https://github.com/e10v/tea-tasting), além de experimentos com **Randomização por Cluster** e **Controle Sintético** utilizando [`cluster-experiments`](https://david26694.github.io/cluster-experiments/). Todos os gráficos utilizam um tema diagnóstico unificado inspirado em **ggplot2**.
 
-Aqui está um exemplo de como eu usaria a prova social nessa landing page:
-"98% dos nossos clientes estão satisfeitos com o nosso produto."
-"O nosso produto foi recomendado pela Forbes, a CNN e a The New York Times."
-"Temos mais de 1 milhão de clientes satisfeitos."
-Acredito que a prova social pode ser uma ferramenta poderosa para melhorar as taxas de conversão. Estou animado para testar essa hipótese e ver os resultados.
-```
+> **Resumo Executivo:** a nova landing page **não** aumentou a conversão (`12.02%` → `11.87%`, `−0.14 pp` absoluto / `−1.20%` relativo, `p = 0.232`). Com 286.690 usuários únicos e limpos, o experimento tinha 80% de poder estatístico para detectar um efeito mínimo (MDE) de **±0.34 pp (±2.84% relativo)**, e a análise Bayesiana aponta apenas **11.6% de probabilidade** de a nova página superar o controle. **Recomendação: não implementar a alteração.**
 
-Bom, agora é a hora de destacar o que temos até então:
+---
 
-**Hipótese:**
-Adicionar uma prova social à landing page aumentará a taxa de conversão.
+## Painel Executivo de Resultados
 
-**Teste:**
-Vamos criar duas versões da landing page: uma com uma prova social e outra sem. Vamos distribuir as duas versões da landing page para um subconjunto de nossos visitantes e comparar as taxas de conversão entre as duas versões.
+| Etapa / Método | Métrica Principal | Resultado | Limiar / Intervalo (95%) | Veredito |
+|---|---|---|---|---|
+| **1. Higiene dos Dados** | Linhas contaminadas / inconsistentes | `7.788` linhas (`2.64%`) removidas | `0` inconsistências em `286.690` usuários | **PASS** |
+| **2. Teste de SRM** | Divisão Controle / Tratamento | `143.293` vs `143.397` (`0.9993`) | `χ² = 0.0377`, `p = 0.8460` (`> 0.001`) | **PASS** |
+| **3. Frequentista (z-test)** | Lift absoluto / relativo | `−0.14 pp` (`−1.20%`) | IC 95% `[−0.38 pp, +0.09 pp]`, `p = 0.2323` | **NÃO SIGNIFICATIVO** |
+| **4. Bootstrap (10k)** | Lift reamostrado | `−0.14 pp` (`−1.20%`) | IC 95% `[−0.39 pp, +0.09 pp]`, `p = 0.2324` | **NÃO SIGNIFICATIVO** |
+| **5. Bayesiano (Beta)** | `P(Tratamento > Controle)` | `11.6%` (`88.4%` Controle vence) | CrI 95% `[−0.38 pp, +0.09 pp]` | **NÃO LANÇAR** |
+| **6. `tea-tasting` MDE** | Efeito Mínimo Detectável | `±0.34 pp` (`±2.84%` relativo) | 80% de poder, bicaudal `α = 0.05` | **BEM DIMENSIONADO** |
+| **7. OLS Clusterizado** | Razão de Erro Padrão (lojas) | `EP = $2.92` vs Naive `$0.64` | Inflação de `4.5x` no EP (`p = 0.5017` vs `0.0023`) | **EVITA FALSO POSITIVO** |
+| **8. Controle Sintético** | Taxa de Falso Positivo (`efeito=0`) | `0%` FPR (`100%` poder em `+10`) | OLS Clusterizado tem `75%` FPR com 1 cluster tratado | **ESSENCIAL PARA N=1 CLUSTER** |
 
-**Ganho esperado:**
-Esperamos que a versão da landing page com a prova social tenha uma taxa de conversão mais alta do que a versão sem. Isso ocorre porque a prova social é uma forma de mostrar aos visitantes que outras pessoas já compraram o produto e gostaram dele. Isso pode ajudar a construir confiança e credibilidade com os visitantes, e fazê-los mais propensos a comprar também.
+---
 
+## Estrutura do Repositório
 
-### Etapas:
-- Definição do problema ✅
-- Análise inicial dos dados ✅
-- Entendimento das populações ✅
-- Preparação dos dados ✅
-- Teste de SRM (Sample Ratio Missmatch), para detectar possíveis problemas com a distribuição das populações do teste. ✅
-- Testes estatístico para validar ou invalidar a hipótese inicial ✅
-- Análise dos resultados ✅
+| Arquivo | Descrição |
+|---|---|
+| [`analysis.ipynb`](analysis.ipynb) | Notebook completo e executado com todo o código, relatórios em texto e gráficos estilo ggplot2 |
+| [`ab_utils.py`](ab_utils.py) | Funções reutilizáveis: tema ggplot2, SRM, IC de Wilson, teste z, bootstrap, teste Bayesiano, `tea-tasting` e `cluster-experiments` |
+| `plots/*.png` | Gráficos diagnósticos de dois painéis em alta resolução (estilo ggplot2) |
+| `data/ab_data.csv` | Dados brutos do experimento (`user_id`, `timestamp`, `group`, `landing_page`, `converted`) |
+| [`README.md`](README.md) | Documentação principal em inglês |
 
-### Análise e conclusões
-#### 1. Entendimento dos dados
-De início, vamos entender como os dados estão dispostos.
-A tabela possui os seguintes campos:
-```
-Nome do dataframe: ab_df
- #   Column        Non-Null Count   Dtype  Descrição
----  ------        --------------   ----- 
- 0   user_id       294478 non-null  int64  Representa o id único do usuário 
- 1   timestamp     294478 non-null  object timestamp do momento do acesso do usuário
- 2   group         294478 non-null  object grupo de segmentação do teste, podendo ser teste ou controle (treatment / control)
- 3   landing_page  294478 non-null  object representa a landing page apresentada ao usuário, dado que é dependente do grupo em que ele se encontra
- 4   converted     294478 non-null  int64  valor binário que informa se o usuário converteu ou não (1 ou 0)
-```
-Tamanho: (294478 linhas, 5 colunas)
+## Como Executar
 
-Usando a função `ab_df.duplicated().sum()` temos 0 linhas duplicadas
-
-Analisando os dados de maneira geral, estamos interessados em verificar se houve ou não um ganho na taxa de conversão da variante do tratamento, vamos observar em linhas gerais como está disposta a taxa de conversão em cada grupo e no geral.
-
-```
-Conversion Rate Geral:  0.1197
-Conversion Rate Controle:  0.1204
-Conversion Rate Tratamento:  0.1189
+```bash
+pip install -r requirements.txt
+jupyter notebook analysis.ipynb
 ```
 
-Anteriormente checamos se não havia nenhuma linha duplicada, agora vamos checar se não houve vazamento ou duplicação de usuários, já que 1 usuário só pode estar em 1 dos dois grupos (teste ou controle) e além disso, a modelagem de nossa tabela faz com que cada linha represente apenas um usuário, portanto vamos remover os usuários duplicados.
+Ou utilizando diretamente as funções em Python:
 
-#### 2. Limpeza e preparação dos dados
+```python
+from ab_utils import (
+    srm_test,
+    perform_ab_test_analysis,
+    bootstrap_ab_test,
+    bayesian_ab_test,
+    compare_with_tea_tasting,
+    run_cluster_randomization_example,
+    run_synthetic_control_example,
+)
 
-`ab_df['user_id'].duplicated().sum()`
-`ab_df['user_id'].duplicated().sum() / len(ab_df)`
-
-Temos 3894 usuários duplicados em nosso dataset, representando cerca de 1,3% do total. Por conta do baixo volume e não termos acesso as regras de negócio/buckets que foram utilizadas no dataset disponibilizado, optei por remover esses usuários e criar um novo dataset sem eles.
-
-```
-### Cria lista com usuários duplicados (user_id)
-ids_duplicados = ab_df['user_id'].value_counts().sort_values()
-
-### Cria uma lista com os user_id com > 1 ocorrência
-ids_duplicados = ids_duplicados[ids_duplicados.values > 1].index 
-
-### Cria novo dataframe sem os usuários duplicados
-ab_df_uniques = ab_df[ab_df["user_id"].isin(ids_duplicados) == False]
-
-### Remove colunas desnecessárias para o teste
-ab_df_uniques = ab_df_uniques.drop(columns="timestamp")`
-```
-
-#### 3. Teste de Sample Ratio Missmatch
-Sample Ratio Mismatch, acontece em testes de hipóteses quando as amostras comparadas têm proporções diferentes entre os grupos, no nosso caso controle e tratamento. Isso pode afetar a validade dos resultados do teste. Por isso, é importante garantir que as amostras estejam balanceadsa e sejam representativas para obter conclusões confiáveis.
-
-Para garantir que essas proporções estão balanceadas utilizarei a função que `Srm_test` que utiliza o qui-quadrado para medir se essa relação entre as amostras causa um impacto significativo no experimento:
-
-```
-# Roda a função para verificar o desbalanço entre grupos (Sample Ratio Missmatch)
-srm_test(control_count, treatment_count, 0.005)
-
-```
-Diff. Entre Buckets: 104 usuários\
-Ratio: 0.9993\
-Chi-square: 0.0377\
-P-value: 0.8460\
-O teste é válido: valor-p > 0.005.
-
-
-#### 4. Testes estatísticos
-Vou utilizar duas abordages para exemplicação (bootstrap e baesyiana):
-
-#### 4.1 Bootstrap
-O método Bootstrap é uma técnica estatística de reamostragem com reposição que permite realizar inferências sobre uma população sem assumir uma distribuição específica para os dados. 
-
-Utilizando as funções criadas:
-
-```
-bootstrap_ab_test(ab_df_uniques) # função que roda o teste de bootstrap e plota o gráfico normalizado
-calculate_ci(ab_df_uniques, "group", "converted") # função que calcula o intervalo de confiança
-
+srm_test(control_count, treatment_count)   # checagem de SRM via qui-quadrado (limiar p = 0.001)
+perform_ab_test_analysis(df)               # teste z de duas proporções + gráfico ggplot2
+bootstrap_ab_test(df)                      # bootstrap de 10k reamostragens + distribuição do lift
+bayesian_ab_test(df)                       # posterior Beta-Binomial + probabilidade de vitória
+compare_with_tea_tasting(df)               # validação com tea-tasting + curva de poder e MDE
+run_cluster_randomization_example()        # OLS Naive vs. OLS Clusterizado em experimento por lojas
+run_synthetic_control_example()            # Controle Sintético vs. OLS Clusterizado (1 cluster tratado)
 ```
 
+---
 
-![Alt text](plots/bootstrap_plot.png)\
+## Parte I — Experimento da Landing Page (Nível Usuário)
 
-Bootstrap Diferença Observada: -0.0014\
-Intervalo de confiança: [-0.00374671  0.001125  ]\
-p-value: 0.5200\
-Os grupos NÃO posuem conversões estatisticamente diferentes.\
+### 1. Higiene dos Dados e Consistência das Variantes
+- **294.478** linhas brutas, sem valores nulos e sem linhas inteiramente duplicadas.
+- **3.894 `user_id`s aparecem mais de uma vez** (7.788 linhas, `2.64%` do tráfego), sendo que **1.895 usuários foram expostos a ambas as variantes** (`control` e `treatment`).
+- **3.893 linhas apresentam inconsistência entre grupo e página** (`control` visualizando `new_page` ou `treatment` visualizando `old_page`). Ao remover todos os `user_id`s repetidos, todas as inconsistências são eliminadas, restando **286.690 usuários únicos**:
+
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ GROUP / LANDING PAGE CONSISTENCY                                   │
+├────────────────────────────────────────────────────────────────────┤
+│  landing_page  new_page  old_page                                  │
+│  group                                                             │
+│  control              0    143293                                  │
+│  treatment       143397         0                                  │
+├────────────────────────────────────────────────────────────────────┤
+│  [PASS] 0 rows where group and landing page disagree               │
+╰────────────────────────────────────────────────────────────────────╯
 ```
-Group	     Mean Conversion Rate	Confidence Interval
-control	     0.1202	                [0.1185 (-1.40%), 0.1219 (1.40%)]
-treatment    0.1187	                [0.1171 (-1.41%), 0.1204 (1.41%)]
+
+### 2. Sample Ratio Mismatch (SRM)
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ SAMPLE RATIO MISMATCH (SRM) CHECK                                  │
+├────────────────────────────────────────────────────────────────────┤
+│  Control users:              143,293                               │
+│  Treatment users:            143,397                               │
+│  Difference (C - T):         -104                                  │
+│  Control / Treatment ratio:  0.9993                                │
+│  Chi-square:                 0.0377                                │
+│  P-value:                    0.8460  (threshold 0.001)             │
+├────────────────────────────────────────────────────────────────────┤
+│  [PASS] Traffic split looks healthy - results can be trusted.      │
+╰────────────────────────────────────────────────────────────────────╯
 ```
 
-
-#### 4.1 Bayes 
-A abordagem Bayesiana para testes A/B é uma maneira alternativa de realizar experimentos e análises comparativas entre grupos, com base na teoria da probabilidade Bayesiana. Ao contrário dos métodos frequentistas tradicionais, que se concentram em valores pontuais e limites de confiança, a abordagem Bayesiana considera a incerteza dos parâmetros em termos de distribuições de probabilidade.
-
-Utilizando as funções criadas:
+### 3. Análise Frequentista: Teste z de Duas Proporções e IC de Wilson
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ FREQUENTIST TEST: TWO-PROPORTION Z-TEST                            │
+├────────────────────────────────────────────────────────────────────┤
+│  Control rate:               12.0173%  (n=143,293)                 │
+│  Treatment rate:             11.8726%  (n=143,397)                 │
+│  Absolute lift:              -0.1447%                              │
+│  Relative lift:              -1.20%                                │
+│  95% CI of difference:       [-0.3821%, +0.0927%]                  │
+│  z-statistic:                -1.1945                               │
+│  P-value (two-sided):        0.2323  (alpha 0.05)                  │
+├────────────────────────────────────────────────────────────────────┤
+│  [NOT SIGNIFICANT] No statistically significant difference between the groups.│
+╰────────────────────────────────────────────────────────────────────╯
 ```
-# Calcula o beta para os buckets
-beta_C = beta(ab_df_uniques[ab_df_uniques['group'] == 'control']['converted'].sum() + 1, (1 - ab_df_uniques[ab_df_uniques['group'] == 'control']['converted']).sum() + 1)
-beta_T = beta(ab_df_uniques[ab_df_uniques['group'] == 'treatment']['converted'].sum() + 1, (1 - ab_df_uniques[ab_df_uniques['group'] == 'treatment']['converted']).sum() + 1)
+![Taxa de Conversão e Lift Frequentista](plots/conversion_ci.png)
 
-#Calculando o ganho do tramtamento
-lift=(beta_T.mean()-beta_C.mean())/beta_C.mean()
-
-#Calcula a probabilidade estatística do ganho visto no tste
-prob=calc_prob_between(beta_T, beta_C)
-
-bayesian_plot([beta_C, beta_T], names=["controle", "tratamento"], data=ab_df_uniques, group_column='group', converted_column='converted', linf=0.1, lsup=0.14)
-
-# Printa o resultado
-if lift < 0:
-    print(f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de perder para o controle.")
-else:
-    print(f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de ganhar do controle.")
-                
-
+### 4. Bootstrap Não-Paramétrico (10.000 Reamostragens)
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ BOOTSTRAP TEST                                                     │
+├────────────────────────────────────────────────────────────────────┤
+│  Resamples:                  10,000  (seed=42)                     │
+│  Observed difference:        -0.1447%                              │
+│  95% bootstrap CI:           [-0.3882%, +0.0932%]                  │
+│  P-value (two-sided):        0.2324  (alpha 0.05)                  │
+├────────────────────────────────────────────────────────────────────┤
+│  [NOT SIGNIFICANT] No statistically significant difference (the CI contains 0).│
+╰────────────────────────────────────────────────────────────────────╯
 ```
-![Alt text](plots/bayes.png)\
+![Distribuições Bootstrap](plots/bootstrap_plot.png)
 
-O Tratamento teve um efeito de -1.20% na métrica selecionada com 11.6% de probabilidade de perder para o controle.
+### 5. Inferência Bayesiana (Modelo Conjugado Beta-Binomial)
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ BAYESIAN TEST (Beta-Binomial, uniform prior)                       │
+├────────────────────────────────────────────────────────────────────┤
+│  P(treatment > control):     11.6%                                 │
+│  P(control > treatment):     88.4%                                 │
+│  Expected relative lift:     -1.20%                                │
+│  95% credible interval:      [-0.3825%, +0.0937%]  (absolute)      │
+├────────────────────────────────────────────────────────────────────┤
+│  Rule of thumb: act on a result when P(better) is >= 95% (or <= 5%).│
+╰────────────────────────────────────────────────────────────────────╯
+```
+![Posteriores Bayesianas](plots/bayes.png)
 
-#### 5. Conclusões
-Não conseguimos provar que o tratamento teve um efeito estatísticamente válido em relação ao grupo de controle, portanto podemos afirmar que não há diferença entre os grupos e que a landing page nova não traz uma melhora significativa na métrica selecionada (conversão).
+### 6. Validação Cruzada e Curva de Poder Estatístico (`tea-tasting`)
 
-### Referências
-[Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing - Ron Kohavi (Author), Diane Tang (Author), Ya Xu (Author)](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV)
-[Detecting and avoiding bucket imbalance in A/B tests - Twitter Engineering Blog](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests)
-[Bayesian AB Test with Python](https://towardsdatascience.com/bayesian-a-b-testing-with-python-the-easy-guide-d638f89e0b8a)
+Validando nossos resultados com [`tea-tasting`](https://github.com/e10v/tea-tasting) (`SampleRatio`, `Proportion` e `Mean`), confirmamos os valores exatos e calculamos o **Efeito Mínimo Detectável (MDE)** com 80% de poder (`α = 0.05`):
+
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ TEA-TASTING CROSS-CHECK & POWER (MDE)                              │
+├────────────────────────────────────────────────────────────────────┤
+│  metric           control treatment rel_effect_size rel_effect_size_ci pvalue│
+│  srm               143293    143397               -             [-, -]  0.847│
+│  conversion_z       0.120     0.119           -1.2%     [-3.1%, 0.78%]  0.232│
+│  conversion_ttest   0.120     0.119           -1.2%     [-3.1%, 0.78%]  0.232│
+├────────────────────────────────────────────────────────────────────┤
+│  Minimum Detectable Effect at 80% power, alpha=0.05:               │
+│  metric     power effect_size rel_effect_size  n_obs               │
+│  conversion   80%     0.00339            2.8% 286690               │
+╰────────────────────────────────────────────────────────────────────╯
+```
+![Validação tea-tasting e Curva de Poder](plots/tea_tasting_power.png)
+
+---
+
+## Parte II — Experimentos Clusterizados e Controle Sintético (`cluster-experiments`)
+
+Quando não é possível randomizar no nível do usuário devido a efeitos de interferência/spillover ou restrições operacionais (ex.: layout de lojas físicas, precificação por cidade, campanhas regionais), a randomização ocorre no **nível do cluster**. Ignorar essa estrutura subestima severamente os erros padrão e infla a taxa de falsos positivos.
+
+### 7. Randomização por Cluster: OLS Naive vs. OLS Clusterizado
+Adaptado do [guia de Cluster Randomization do `cluster-experiments`](https://david26694.github.io/cluster-experiments/examples/cluster_randomization.html): 50 lojas são sorteadas entre controle e tratamento (`+$5` de efeito real, efeito aleatório por loja com `DP = $10` ao longo de ~4.823 transações). O OLS Naive trata transações como independentes, subestimando o erro padrão em **4.5x** e gerando um falso positivo (`p = 0.0023`), enquanto o OLS Clusterizado corrige para a correlação intra-loja (`p = 0.5017`):
+
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ CLUSTER RANDOMIZATION (50 stores, ~4,823 transactions)             │
+├────────────────────────────────────────────────────────────────────┤
+│                          Method  ATE ($)  Std. Error ($)  p-value          95% CI│
+│    Naive OLS (ignores clusters)     1.96            0.64   0.0023  [$0.70, $3.23]│
+│  Clustered OLS (store-level SE)     1.96            2.92   0.5017 [$-3.77, $7.69]│
+├────────────────────────────────────────────────────────────────────┤
+│  [INSIGHT] Clustered SE is 4.5x larger than Naive SE (prevents false positive!).│
+╰────────────────────────────────────────────────────────────────────╯
+```
+![Randomização por Cluster](plots/cluster_randomization.png)
+
+### 8. Controle Sintético vs. OLS Clusterizado (Apenas 1 Cluster Tratado)
+Adaptado do [guia de Synthetic Control do `cluster-experiments`](https://david26694.github.io/cluster-experiments/synthetic_control.html): quando **apenas 1 cluster** recebe o tratamento (ex.: lançamento em uma única cidade ou região), até mesmo o OLS Clusterizado falha — sua taxa de falso positivo em `efeito = 0` salta para **75%** (em vez dos 5% nominais). O **Controle Sintético** constrói um contrafactual ponderado a partir dos clusters doadores no período pré-intervenção, mantendo os falsos positivos em **0%** quando `efeito = 0` e alcançando **100% de poder** para efeitos reais a partir de `+10`:
+
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ SYNTHETIC CONTROL vs. CLUSTERED OLS (1 treated cluster)            │
+├────────────────────────────────────────────────────────────────────┤
+│  Point estimate mean (true=+10):10.27  (sd=1.64)                   │
+├────────────────────────────────────────────────────────────────────┤
+│   Effect size  Synthetic Control power  Clustered OLS power        │
+│             0                    0.000                 0.75        │
+│             5                    0.625                 1.00        │
+│            10                    1.000                 1.00        │
+│            15                    1.000                 1.00        │
+│            20                    1.000                 1.00        │
+├────────────────────────────────────────────────────────────────────┤
+│  [INSIGHT] At effect=0 (FPR): Synthetic Control=0% vs Clustered OLS=75%!│
+╰────────────────────────────────────────────────────────────────────╯
+```
+![Controle Sintético](plots/synthetic_control.png)
+
+---
+
+## Referências
+- [Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV) — Ron Kohavi, Diane Tang, Ya Xu
+- [Statistical Methods in Online A/B Testing: Statistics for data-driven business decisions and risk management in e-commerce](https://www.amazon.com/Statistical-Methods-Online-Testing-data-driven/dp/1694079725) — Georgi Z. Georgiev
+- [`tea-tasting`: statistical analysis of A/B tests in Python](https://github.com/e10v/tea-tasting) — Evgeny Ivanov
+- [`cluster-experiments`: Cluster Randomization](https://david26694.github.io/cluster-experiments/examples/cluster_randomization.html) & [Synthetic Control](https://david26694.github.io/cluster-experiments/synthetic_control.html) — David Masip
+- [Detecting and avoiding bucket imbalance in A/B tests](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests) — Twitter Engineering

@@ -218,17 +218,9 @@ Adapted from the [`cluster-experiments` Synthetic Control guide](https://david26
 
 ---
 
-## Key Improvements Over the Initial Version
-
-- **Fixed bootstrap p-value bug:** replaced `mean(boot_diff > observed)` (which always evaluates near 0.5) with a two-sided null-centered p-value (`0.2324`).
-- **Fixed Bayesian interpretation bug:** `P(Treatment > Control) = 11.6%` was previously mislabeled as the probability of losing; added exact conjugate posterior density plots plus the posterior distribution of the lift (`T − C`).
-- **Upgraded frequentist test & CIs:** replaced Yates-corrected chi-square and t-intervals on binary outcomes with an explicit two-proportion z-test, unpooled lift CI, and Wilson score intervals.
-- **Added `tea-tasting` cross-check & MDE power curve:** verified SRM, z-test, and Welch t-test, and solved for the 80%-power MDE (`±0.34 pp`).
-- **Added `cluster-experiments` case studies:** store-level Cluster Randomization (`clustered_ols` vs. `ols`) and single-cluster Synthetic Control (`SyntheticControlAnalysis` vs. `ClusteredOLSAnalysis`).
-- **Unified ggplot2-inspired visual design:** all 6 figures are two-panel high-DPI diagnostics with ggplot2 grey canvases (`#F4F5F7`), white major/minor grids, direct data callouts, and source captions.
-
 ## References
-- [Trustworthy Online Controlled Experiments](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV) — Ron Kohavi, Diane Tang, Ya Xu
+- [Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV) — Ron Kohavi, Diane Tang, Ya Xu
+- [Statistical Methods in Online A/B Testing: Statistics for data-driven business decisions and risk management in e-commerce](https://www.amazon.com/Statistical-Methods-Online-Testing-data-driven/dp/1694079725) — Georgi Z. Georgiev
 - [`tea-tasting`: statistical analysis of A/B tests in Python](https://github.com/e10v/tea-tasting) — Evgeny Ivanov
 - [`cluster-experiments`: Cluster Randomization](https://david26694.github.io/cluster-experiments/examples/cluster_randomization.html) & [Synthetic Control](https://david26694.github.io/cluster-experiments/synthetic_control.html) — David Masip
 - [Detecting and avoiding bucket imbalance in A/B tests](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests) — Twitter Engineering
