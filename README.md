@@ -1,171 +1,125 @@
-# Análise de teste AB
-Nesse pequeno projeto serão utilizados os dados disponíveis no Kaggle, onde temos dados de um teste AB realizado entre 2 variações de uma landing page em um site confidencial. Para tornar o problema mais tangível, irei criar uma hipótese imaginária para tornar essa análise mais tangível. Então, suponhamos que recebemos a seguinte demanda do nosso product manager:
+# A/B Test Analysis: Landing Page Social Proof
 
-### Definição do Problema
-```
-Olá, Matheus! 
-Estou escrevendo para você hoje para discutir uma hipótese para um teste A/B em uma landing page do nosso site.
-A minha hipótese é que adicionar uma prova social à landing page aumentará a taxa de conversão.
+🇧🇷 [Versão em português](README.pt-BR.md)
 
-Para testar essa hipótese, criarei duas versões da landing page: uma com uma prova social e outra sem. Vou distribuir as duas versões da landing page para um subconjunto dos nossos visitantes e comparar as taxas de conversão entre as duas versões.
+A end-to-end A/B test analysis on a real dataset ([Kaggle](https://www.kaggle.com/datasets/zhangluyuan/ab-testing), ~294k users): data quality checks, Sample Ratio Mismatch, and three statistical approaches (frequentist, bootstrap, Bayesian) that lead to one business recommendation.
 
-Espero que a versão da landing page com a prova social tenha uma taxa de conversão mais alta do que a versão sem. Isso ocorre porque a prova social é uma forma de mostrar aos visitantes que outras pessoas já compraram o produto e gostaram dele. Isso pode ajudar a construir confiança e credibilidade com os visitantes, e fazê-los mais propensos a comprar também.
+> **TL;DR:** the new landing page did **not** improve conversion (12.02% → 11.87%, p = 0.23). The result is statistically inconclusive, and there's only an ~12% probability that the new page is better.
 
-Aqui está um exemplo de como eu usaria a prova social nessa landing page:
-"98% dos nossos clientes estão satisfeitos com o nosso produto."
-"O nosso produto foi recomendado pela Forbes, a CNN e a The New York Times."
-"Temos mais de 1 milhão de clientes satisfeitos."
-Acredito que a prova social pode ser uma ferramenta poderosa para melhorar as taxas de conversão. Estou animado para testar essa hipótese e ver os resultados.
-```
+## The problem
 
-Bom, agora é a hora de destacar o que temos até então:
+The product manager's hypothesis: *adding social proof to the landing page will increase the conversion rate.* Control sees the old page, treatment sees the new page with social proof. The metric is binary conversion (`converted`).
 
-**Hipótese:**
-Adicionar uma prova social à landing page aumentará a taxa de conversão.
+## What's in the repo
 
-**Teste:**
-Vamos criar duas versões da landing page: uma com uma prova social e outra sem. Vamos distribuir as duas versões da landing page para um subconjunto de nossos visitantes e comparar as taxas de conversão entre as duas versões.
+| File | Purpose |
+|---|---|
+| [`analysis.ipynb`](analysis.ipynb) | The full, executed analysis |
+| [`ab_utils.py`](ab_utils.py) | Reusable functions: SRM, CIs, z-test, bootstrap, Bayesian test, plots |
+| `data/ab_data.csv` | Experiment data (user, timestamp, group, page, converted) |
+| [`README.pt-BR.md`](README.pt-BR.md) | Original Portuguese write-up |
 
-**Ganho esperado:**
-Esperamos que a versão da landing page com a prova social tenha uma taxa de conversão mais alta do que a versão sem. Isso ocorre porque a prova social é uma forma de mostrar aos visitantes que outras pessoas já compraram o produto e gostaram dele. Isso pode ajudar a construir confiança e credibilidade com os visitantes, e fazê-los mais propensos a comprar também.
+## Quick start
 
-
-### Etapas:
-- Definição do problema ✅
-- Análise inicial dos dados ✅
-- Entendimento das populações ✅
-- Preparação dos dados ✅
-- Teste de SRM (Sample Ratio Missmatch), para detectar possíveis problemas com a distribuição das populações do teste. ✅
-- Testes estatístico para validar ou invalidar a hipótese inicial ✅
-- Análise dos resultados ✅
-
-### Análise e conclusões
-#### 1. Entendimento dos dados
-De início, vamos entender como os dados estão dispostos.
-A tabela possui os seguintes campos:
-```
-Nome do dataframe: ab_df
- #   Column        Non-Null Count   Dtype  Descrição
----  ------        --------------   ----- 
- 0   user_id       294478 non-null  int64  Representa o id único do usuário 
- 1   timestamp     294478 non-null  object timestamp do momento do acesso do usuário
- 2   group         294478 non-null  object grupo de segmentação do teste, podendo ser teste ou controle (treatment / control)
- 3   landing_page  294478 non-null  object representa a landing page apresentada ao usuário, dado que é dependente do grupo em que ele se encontra
- 4   converted     294478 non-null  int64  valor binário que informa se o usuário converteu ou não (1 ou 0)
-```
-Tamanho: (294478 linhas, 5 colunas)
-
-Usando a função `ab_df.duplicated().sum()` temos 0 linhas duplicadas
-
-Analisando os dados de maneira geral, estamos interessados em verificar se houve ou não um ganho na taxa de conversão da variante do tratamento, vamos observar em linhas gerais como está disposta a taxa de conversão em cada grupo e no geral.
-
-```
-Conversion Rate Geral:  0.1197
-Conversion Rate Controle:  0.1204
-Conversion Rate Tratamento:  0.1189
+```bash
+pip install -r requirements.txt
+jupyter notebook analysis.ipynb
 ```
 
-Anteriormente checamos se não havia nenhuma linha duplicada, agora vamos checar se não houve vazamento ou duplicação de usuários, já que 1 usuário só pode estar em 1 dos dois grupos (teste ou controle) e além disso, a modelagem de nossa tabela faz com que cada linha represente apenas um usuário, portanto vamos remover os usuários duplicados.
+Or use the helpers on your own data (needs `group` = `control`/`treatment` and a 0/1 `converted` column):
 
-#### 2. Limpeza e preparação dos dados
+```python
+from ab_utils import srm_test, perform_ab_test_analysis, bootstrap_ab_test, bayesian_ab_test
 
-`ab_df['user_id'].duplicated().sum()`
-`ab_df['user_id'].duplicated().sum() / len(ab_df)`
-
-Temos 3894 usuários duplicados em nosso dataset, representando cerca de 1,3% do total. Por conta do baixo volume e não termos acesso as regras de negócio/buckets que foram utilizadas no dataset disponibilizado, optei por remover esses usuários e criar um novo dataset sem eles.
-
-```
-### Cria lista com usuários duplicados (user_id)
-ids_duplicados = ab_df['user_id'].value_counts().sort_values()
-
-### Cria uma lista com os user_id com > 1 ocorrência
-ids_duplicados = ids_duplicados[ids_duplicados.values > 1].index 
-
-### Cria novo dataframe sem os usuários duplicados
-ab_df_uniques = ab_df[ab_df["user_id"].isin(ids_duplicados) == False]
-
-### Remove colunas desnecessárias para o teste
-ab_df_uniques = ab_df_uniques.drop(columns="timestamp")`
+srm_test(control_count, treatment_count)   # is the traffic split healthy?
+perform_ab_test_analysis(df)               # two-proportion z-test + CI of the lift
+bootstrap_ab_test(df)                      # resampling, no distributional assumptions
+bayesian_ab_test(df)                       # P(treatment > control)
 ```
 
-#### 3. Teste de Sample Ratio Missmatch
-Sample Ratio Mismatch, acontece em testes de hipóteses quando as amostras comparadas têm proporções diferentes entre os grupos, no nosso caso controle e tratamento. Isso pode afetar a validade dos resultados do teste. Por isso, é importante garantir que as amostras estejam balanceadsa e sejam representativas para obter conclusões confiáveis.
+Each function prints a compact report and returns a dict with the numbers.
 
-Para garantir que essas proporções estão balanceadas utilizarei a função que `Srm_test` que utiliza o qui-quadrado para medir se essa relação entre as amostras causa um impacto significativo no experimento:
+## Analysis
 
-```
-# Roda a função para verificar o desbalanço entre grupos (Sample Ratio Missmatch)
-srm_test(control_count, treatment_count, 0.005)
+### 1. Data quality
+- 294,478 rows, no missing values, no fully duplicated rows.
+- **3,894 `user_id`s appear more than once** (7,788 rows); 1,895 of them were exposed to *both* variants.
+- **3,893 rows have a group/page mismatch** (control users seeing `new_page` or vice versa).
 
-```
-Diff. Entre Buckets: 104 usuários\
-Ratio: 0.9993\
-Chi-square: 0.0377\
-P-value: 0.8460\
-O teste é válido: valor-p > 0.005.
-
-
-#### 4. Testes estatísticos
-Vou utilizar duas abordages para exemplicação (bootstrap e baesyiana):
-
-#### 4.1 Bootstrap
-O método Bootstrap é uma técnica estatística de reamostragem com reposição que permite realizar inferências sobre uma população sem assumir uma distribuição específica para os dados. 
-
-Utilizando as funções criadas:
+We drop every row of a repeated user (no rule exists to pick the "right" one). This also removes every mismatch, leaving **286,690 users**.
 
 ```
-bootstrap_ab_test(ab_df_uniques) # função que roda o teste de bootstrap e plota o gráfico normalizado
-calculate_ci(ab_df_uniques, "group", "converted") # função que calcula o intervalo de confiança
-
+ GROUP / LANDING PAGE CONSISTENCY   (after cleaning)
+landing_page  new_page  old_page
+control              0    143293
+treatment       143397         0
+  [PASS] 0 rows where group and landing page disagree
 ```
 
-
-![Alt text](plots/bootstrap_plot.png)\
-
-Bootstrap Diferença Observada: -0.0014\
-Intervalo de confiança: [-0.00374671  0.001125  ]\
-p-value: 0.5200\
-Os grupos NÃO posuem conversões estatisticamente diferentes.\
+### 2. Sample Ratio Mismatch
 ```
-Group	     Mean Conversion Rate	Confidence Interval
-control	     0.1202	                [0.1185 (-1.40%), 0.1219 (1.40%)]
-treatment    0.1187	                [0.1171 (-1.41%), 0.1204 (1.41%)]
+ SAMPLE RATIO MISMATCH (SRM) CHECK
+  Control users:              143,293
+  Treatment users:            143,397
+  Difference (C - T):         -104
+  Control / Treatment ratio:  0.9993
+  Chi-square:                 0.0377
+  P-value:                    0.8460  (threshold 0.001)
+  [PASS] Traffic split looks healthy - results can be trusted.
 ```
 
-
-#### 4.1 Bayes 
-A abordagem Bayesiana para testes A/B é uma maneira alternativa de realizar experimentos e análises comparativas entre grupos, com base na teoria da probabilidade Bayesiana. Ao contrário dos métodos frequentistas tradicionais, que se concentram em valores pontuais e limites de confiança, a abordagem Bayesiana considera a incerteza dos parâmetros em termos de distribuições de probabilidade.
-
-Utilizando as funções criadas:
+### 3. Frequentist: two-proportion z-test
 ```
-# Calcula o beta para os buckets
-beta_C = beta(ab_df_uniques[ab_df_uniques['group'] == 'control']['converted'].sum() + 1, (1 - ab_df_uniques[ab_df_uniques['group'] == 'control']['converted']).sum() + 1)
-beta_T = beta(ab_df_uniques[ab_df_uniques['group'] == 'treatment']['converted'].sum() + 1, (1 - ab_df_uniques[ab_df_uniques['group'] == 'treatment']['converted']).sum() + 1)
-
-#Calculando o ganho do tramtamento
-lift=(beta_T.mean()-beta_C.mean())/beta_C.mean()
-
-#Calcula a probabilidade estatística do ganho visto no tste
-prob=calc_prob_between(beta_T, beta_C)
-
-bayesian_plot([beta_C, beta_T], names=["controle", "tratamento"], data=ab_df_uniques, group_column='group', converted_column='converted', linf=0.1, lsup=0.14)
-
-# Printa o resultado
-if lift < 0:
-    print(f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de perder para o controle.")
-else:
-    print(f"O Tratamento teve um efeito de {lift*100:2.2f}% na métrica selecionada com {prob*100:2.1f}% de probabilidade de ganhar do controle.")
-                
-
+  Control rate:               12.0173%  (n=143,293)
+  Treatment rate:             11.8726%  (n=143,397)
+  Absolute lift:              -0.1447%
+  Relative lift:              -1.20%
+  95% CI of difference:       [-0.3821%, +0.0927%]
+  z-statistic:                -1.1945
+  P-value (two-sided):        0.2323  (alpha 0.05)
+  [NOT SIGNIFICANT] No statistically significant difference between the groups.
 ```
-![Alt text](plots/bayes.png)\
+![Conversion rates](plots/conversion_ci.png)
 
-O Tratamento teve um efeito de -1.20% na métrica selecionada com 11.6% de probabilidade de perder para o controle.
+### 4. Bootstrap (10,000 resamples)
+```
+  Observed difference:        -0.1447%
+  95% bootstrap CI:           [-0.3882%, +0.0932%]
+  P-value (two-sided):        0.2324  (alpha 0.05)
+  [NOT SIGNIFICANT] No statistically significant difference (the CI contains 0).
+```
+![Bootstrap](plots/bootstrap_plot.png)
 
-#### 5. Conclusões
-Não conseguimos provar que o tratamento teve um efeito estatísticamente válido em relação ao grupo de controle, portanto podemos afirmar que não há diferença entre os grupos e que a landing page nova não traz uma melhora significativa na métrica selecionada (conversão).
+### 5. Bayesian (Beta-Binomial, uniform prior)
+```
+  P(treatment > control):     11.6%
+  P(control > treatment):     88.4%
+  Expected relative lift:     -1.20%
+  95% credible interval:      [-0.3825%, +0.0937%]  (absolute)
+```
+![Bayes](plots/bayes.png)
 
-### Referências
-[Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing - Ron Kohavi (Author), Diane Tang (Author), Ya Xu (Author)](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV)
-[Detecting and avoiding bucket imbalance in A/B tests - Twitter Engineering Blog](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests)
-[Bayesian AB Test with Python](https://towardsdatascience.com/bayesian-a-b-testing-with-python-the-easy-guide-d638f89e0b8a)
+## Conclusion
+
+All three methods agree. The treatment converts slightly *less* than control, but the difference is well within noise: both intervals include 0 and the plausible lift is at most about +0.1 percentage points. **There is no evidence the new landing page improves conversion**, so it shouldn't be rolled out on conversion grounds alone.
+
+Caveat: no power analysis is available for this dataset, so a true effect smaller than the interval width can't be ruled out.
+
+## What changed in this version
+
+A review of the original code fixed several correctness problems:
+
+- **Bootstrap p-value was wrong.** It used `mean(boot_diff > observed)`, but the bootstrap distribution is centered on the observed value, so that is always ~0.5 regardless of the data. It now uses a two-sided p-value from the null-centered distribution.
+- **Bayesian result was mislabeled.** `calc_prob_between(treatment, control)` returns P(treatment > control) = 11.6%, but it was reported as the probability of *losing*. The correct reading is 11.6% chance of winning, 88.4% of losing.
+- **Bayesian probability** used a slow, numerically fragile closed-form sum; it's now a seeded Monte Carlo estimate, plus a credible interval.
+- **Bayesian plot** showed variance as `±`; it now shows the standard deviation, and no longer depends on unused arguments.
+- **Chi-square test applied Yates' correction implicitly** and relied on row order; replaced by an explicit two-proportion z-test with a CI for the lift.
+- **Confidence intervals** used a t-interval on a binary metric; they now use the Wilson score interval.
+- **SRM threshold** 0.005 → the conventional 0.001, and typo `treshold_p` → `threshold_p`.
+- **Added a group/landing-page consistency check** that the original analysis lacked.
+- Reproducible seeds, and all prints/plots/docstrings are in English.
+
+## References
+- [Trustworthy Online Controlled Experiments](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV): Kohavi, Tang, Xu
+- [Detecting and avoiding bucket imbalance in A/B tests](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests): Twitter Engineering
+- [Bayesian A/B Testing with Python](https://towardsdatascience.com/bayesian-a-b-testing-with-python-the-easy-guide-d638f89e0b8a)
