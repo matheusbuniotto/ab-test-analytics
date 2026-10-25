@@ -7,9 +7,9 @@
 
 🇧🇷 [Versão em português](README.pt-BR.md)
 
-An end-to-end experimentation portfolio project on a real dataset ([Kaggle](https://www.kaggle.com/datasets/zhangluyuan/ab-testing), ~294k users): data quality & leakage audits, Sample Ratio Mismatch (SRM), three statistical paradigms (frequentist, non-parametric bootstrap, Bayesian), cross-validation & MDE power analysis via [`tea-tasting`](https://github.com/e10v/tea-tasting), and **Cluster Randomization** + **Synthetic Control** experiments via [`cluster-experiments`](https://david26694.github.io/cluster-experiments/). All visualizations use a unified **ggplot2-styled** diagnostic layout.
+An end-to-end experimentation portfolio project on a real dataset ([Kaggle](https://www.kaggle.com/datasets/zhangluyuan/ab-testing), ~294k users): experiment planning & metric hierarchy, data quality & leakage audits, Sample Ratio Mismatch (SRM), three statistical paradigms (frequentist, non-parametric bootstrap, Bayesian), cross-validation & MDE power analysis via [`tea-tasting`](https://github.com/e10v/tea-tasting), and **Cluster Randomization** + **Synthetic Control** experiments via [`cluster-experiments`](https://david26694.github.io/cluster-experiments/). All visualizations use a unified **ggplot2-styled** diagnostic layout.
 
-> **Executive Summary:** the new landing page did **not** improve conversion (`12.02%` → `11.87%`, `−0.14 pp` absolute / `−1.20%` relative, `p = 0.232`). With 286,690 clean users, the experiment had 80% power to detect a **±0.34 pp (±2.84% relative)** lift, and Bayesian inference gives only an **11.6% probability** that the treatment beats control. **Recommendation: do not ship.**
+> **Executive Summary:** the new landing page did **not** improve conversion (`12.02%` → `11.87%`, `−0.14 pp` absolute / `−1.20%` relative, `p = 0.232`). With 286,690 clean users (~22 days of traffic), the experiment had 80% power to detect a **±0.34 pp (±2.84% relative)** lift, and Bayesian inference gives only an **11.6% probability** that the treatment beats control. **Recommendation: do not ship.**
 
 ---
 
@@ -17,12 +17,13 @@ An end-to-end experimentation portfolio project on a real dataset ([Kaggle](http
 
 | Stage / Method | Key Metric | Result | Threshold / CI | Verdict |
 |---|---|---|---|---|
+| **0. Experiment Design** | Target MDE & Runtime | `±0.34 pp` (`±2.84%` rel.) | `N = 286,690` (~22 days, `80%` power, `α = 0.05`) | **PRE-SPECIFIED** |
 | **1. Data Hygiene** | Contaminated / mismatched rows | `7,788` rows (`2.64%`) dropped | `0` mismatches in `286,690` clean users | **PASS** |
 | **2. SRM Check** | Control / Treatment split | `143,293` vs `143,397` (`0.9993`) | `χ² = 0.0377`, `p = 0.8460` (`> 0.001`) | **PASS** |
 | **3. Frequentist (z-test)** | Absolute / Relative lift | `−0.14 pp` (`−1.20%`) | 95% CI `[−0.38 pp, +0.09 pp]`, `p = 0.2323` | **NOT SIGNIFICANT** |
 | **4. Bootstrap (10k)** | Resampled lift | `−0.14 pp` (`−1.20%`) | 95% CI `[−0.39 pp, +0.09 pp]`, `p = 0.2324` | **NOT SIGNIFICANT** |
 | **5. Bayesian (Beta)** | `P(Treatment > Control)` | `11.6%` (`88.4%` Control wins) | 95% CrI `[−0.38 pp, +0.09 pp]` | **DO NOT SHIP** |
-| **6. `tea-tasting` MDE** | Minimum Detectable Effect | `±0.34 pp` (`±2.84%` relative) | 80% power, two-sided `α = 0.05` | **WELL-POWERED** |
+| **6. `tea-tasting` MDE** | Sensitivity / Power check | `±0.34 pp` (`±2.84%` relative) | 80% power, two-sided `α = 0.05` | **WELL-POWERED** |
 | **7. Clustered OLS** | Store-randomized SE ratio | `SE = $2.92` vs Naive `$0.64` | `4.5x` SE inflation (`p = 0.5017` vs `0.0023`) | **PREVENTS FALSE POSITIVE** |
 | **8. Synthetic Control** | 1-treated-cluster FPR (`effect=0`) | `0%` FPR (`100%` power at `+10`) | Clustered OLS has `75%` FPR at `effect=0` | **REQUIRED FOR N=1 CLUSTER** |
 
@@ -32,11 +33,11 @@ An end-to-end experimentation portfolio project on a real dataset ([Kaggle](http
 
 | File | Description |
 |---|---|
-| [`analysis.ipynb`](analysis.ipynb) | Full, executed notebook with all code, box-drawn reports, and ggplot2-styled charts |
+| [`analysis.ipynb`](analysis.ipynb) | Full, executed notebook with planning framework, code, box-drawn reports, and ggplot2-styled charts |
 | [`ab_utils.py`](ab_utils.py) | Reusable toolkit: ggplot2 theme, SRM, Wilson CIs, z-test, bootstrap, Bayesian test, `tea-tasting` & `cluster-experiments` wrappers |
 | `plots/*.png` | High-resolution two-panel ggplot2 diagnostic charts |
 | `data/ab_data.csv` | Raw experiment log (`user_id`, `timestamp`, `group`, `landing_page`, `converted`) |
-| [`README.pt-BR.md`](README.pt-BR.md) | Original Portuguese write-up |
+| [`README.pt-BR.md`](README.pt-BR.md) | Complete Portuguese version of this documentation |
 
 ## Quick Start
 
@@ -71,8 +72,53 @@ run_synthetic_control_example()            # Synthetic Control vs. Clustered OLS
 
 ## Part I — User-Level Landing Page Experiment
 
+### 0. Experiment Planning Phase: Hypothesis, Metric Hierarchy, Test Type & MDE
+
+Before writing any analysis code, a trustworthy experiment starts with a **Planning Phase** triggered by the Product Manager's request:
+
+```text
+Hi Matheus!
+I'd like to test a hypothesis on our landing page: adding social proof ("98% of customers are
+satisfied", "Recommended by Forbes, CNN, and The New York Times", "Over 1M happy customers")
+will build trust and increase our conversion rate.
+
+To test this, we'll split incoming visitors 50/50 between the current landing page (control)
+and the new version with social proof (treatment) and compare conversion rates.
+```
+
+Following Kohavi et al. (*Trustworthy Online Controlled Experiments*) and Georgiev (*Statistical Methods in Online A/B Testing*), we translate this request into a pre-registered experiment specification:
+
+#### 0.1 Metric Hierarchy (Primary, Secondary & Guardrails)
+Even though the public Kaggle log only exports the binary `converted` flag, in production we define three tiers of metrics before launch:
+- **Primary Decision Metric (OEC):** `Conversion Rate` (`converted` per unique user) — the single metric that determines whether the hypothesis succeeds.
+- **Secondary / Diagnostic Metrics:** `Click-Through Rate (CTR)` on the CTA button, `Scroll Depth` (did users actually see the social-proof section?), and `Time to Convert` — used to explain *why* the primary metric moved or stayed flat.
+- **Guardrail Metrics:**
+  - *Organizational / System Guardrails:* `Sample Ratio Mismatch (SRM)`, `Page Load Latency (p95)` (extra social-proof widgets/images can slow down rendering and hurt conversion), and `Client Error Rate`.
+  - *Business Guardrails:* `Bounce Rate`, `Refund / Cancellation Rate`, and `Average Order Value (AOV)` (ensuring urgency/social proof doesn't attract low-intent signups).
+
+#### 0.2 Choosing the Test Type (Superiority vs. Non-Inferiority)
+The business goal dictates the statistical hypothesis structure:
+- **Superiority Test (used when shipping requires a proven gain):** If adding social proof introduces maintenance cost or visual clutter, we only ship if Treatment **beats** Control ($H_0: \Delta = 0$ vs. $H_1: \Delta \neq 0$, or one-sided $H_1: \Delta > 0$).
+- **Non-Inferiority / Equivalence Test (used for redesigns, migrations, or brand updates):** If the new landing page is required for brand alignment or a tech-stack migration, we don't need it to *increase* conversion — we only need to prove it doesn't hurt conversion by more than a pre-agreed **non-inferiority margin** $-\Delta_{\text{NI}}$ (e.g., $H_0: p_T - p_C \le -0.25\text{ pp}$ vs. $H_1: p_T - p_C > -0.25\text{ pp}$). Looking at our observed 95% CI `[−0.38 pp, +0.09 pp]`, the new page fails a superiority test, and would only pass a non-inferiority test if leadership tolerated up to a `−0.40 pp` (`−3.3%` relative) drop.
+
+#### 0.3 Defining the MDE & Sample Size (*A Priori* vs. Retrospective Sensitivity)
+The **Minimum Detectable Effect (MDE)** is the smallest true lift worth detecting at a target statistical power ($1 - \beta = 80\%$) and significance level ($\alpha = 0.05$). It is a **planning parameter chosen before the test**, balancing business ROI against traffic constraints (~13,030 clean users/day in this dataset, baseline $p_0 \approx 12.0\%$):
+
+| Target Relative MDE | Absolute Lift ($\Delta$) | Required Total Sample ($N$) | Est. Runtime (~13k users/day) | Practical Trade-off |
+|---|---|---|---|---|
+| **±1.00%** | `±0.12 pp` | `2,312,270` | ~177 days (~25 weeks) | Too slow for a UI copy test; requires CUPED or higher traffic |
+| **±2.00%** | `±0.24 pp` | `580,545` | ~45 days (~6.5 weeks) | High precision, moderate runtime |
+| **±2.84% (This Dataset)** | **`±0.34 pp`** | **`286,690`** | **22 days (~3 full weeks)** | **Sweet spot: 3 weekly cycles, detects ≥2.84% lift at 80% power** |
+| **±5.00%** | `±0.60 pp` | `94,072` | ~7.2 days (1 full week) | Fast screening for bold redesigns |
+| **±10.00%** | `±1.20 pp` | `24,007` | ~2 days *(extend to 7d)* | Never stop at 2 days — always run at least 1–2 full weekly cycles |
+
+> [!IMPORTANT]
+> **Why we never rely on "observed post-hoc power":** As Georgiev emphasizes, plugging an noisy observed effect (`−0.14 pp`) into a power formula after the test is statistically meaningless. Instead, when auditing an existing dataset of $N = 286,690$, we compute the **retrospective sensitivity MDE (`±0.34 pp` / `±2.84%`)** to answer: *"What effect size was this experiment well-powered to detect?"* Because `±2.84%` is well below the typical 3%–5% bar for a landing-page change, a non-significant result (`p = 0.232`) is a well-powered null, not an underpowered guess.
+
+---
+
 ### 1. Data Hygiene & Variant Consistency
-- **294,478** raw rows, zero missing values, zero exact duplicate rows.
+- **294,478** raw rows (`2017-01-02` to `2017-01-24`, ~22 days), zero missing values, zero exact duplicate rows.
 - **3,894 `user_id`s appear more than once** (7,788 rows, `2.64%` of traffic), and **1,895 users were exposed to both variants** (`control` and `treatment`), violating unit-level independence.
 - **3,893 rows have a group/page mismatch** (`control` seeing `new_page` or `treatment` seeing `old_page`). Dropping all repeated `user_id`s eliminates every mismatch and leaves **286,690 unique users**:
 
@@ -155,7 +201,7 @@ run_synthetic_control_example()            # Synthetic Control vs. Clustered OLS
 
 ### 6. Cross-Check & Statistical Power Curve (`tea-tasting`)
 
-Cross-validating with [`tea-tasting`](https://github.com/e10v/tea-tasting) (`SampleRatio`, `Proportion`, and `Mean`) confirms our exact estimates and adds the **Minimum Detectable Effect (MDE)** at 80% power (`α = 0.05`):
+Cross-validating with [`tea-tasting`](https://github.com/e10v/tea-tasting) (`SampleRatio`, `Proportion`, and `Mean`) confirms our exact estimates and plots the sensitivity **Minimum Detectable Effect (MDE)** curve at 80% power (`α = 0.05`):
 
 ```text
 ╭────────────────────────────────────────────────────────────────────╮
