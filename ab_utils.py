@@ -1,10 +1,13 @@
 """Helper functions for analysing a two-variant (control vs. treatment) A/B test
-with a binary conversion metric.
+with a binary conversion metric, plus wrappers for `tea-tasting` comparison and
+`cluster-experiments` (cluster randomization & synthetic control).
 
-Every analysis function prints a short, readable report AND returns a dict with
-the raw numbers, so results can be reused programmatically.
+Every analysis function prints a short, readable report AND returns a dict/DataFrame
+with the raw numbers, so results can be reused programmatically.
 """
 from __future__ import annotations
+
+from itertools import product
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -331,3 +334,212 @@ def bayesian_plot(betas, names, linf: float = 0, lsup: float = 1, data=None,
     ax.legend(loc="upper right", frameon=False)
     plt.tight_layout()
     plt.show()
+
+
+# --------------------------------------------------------------------------- #
+# Comparison with tea-tasting (https://github.com/e10v/tea-tasting)
+# --------------------------------------------------------------------------- #
+def compare_with_tea_tasting(data: pd.DataFrame, group_column: str = "group",
+                             converted_column: str = "converted") -> dict:
+    """Run the same SRM, two-proportion z-test, and t-test using `tea-tasting`,
+    plus solve for the Minimum Detectable Effect (MDE) at 80% power.
+    """
+    import tea_tasting as tt
+
+    exp = tt.Experiment(
+        srm=tt.SampleRatio(),
+        conversion_z=tt.Proportion(converted_column, method="norm", correction=False),
+        conversion_ttest=tt.Mean(converted_column),
+        variant=group_column,
+    )
+    res = exp.analyze(data, control=CONTROL)
+    power_exp = tt.Experiment(conversion=tt.Mean(converted_column), variant=group_column)
+    mde = power_exp.solve_power(data, "rel_effect_size")
+
+    _header("TEA-TASTING CROSS-CHECK & POWER (MDE)")
+    print(res)
+    print("-" * _WIDTH)
+    print("  Minimum Detectable Effect at 80% power, alpha=0.05:")
+    print(mde)
+    print("=" * _WIDTH)
+    return {"analysis": res.to_pandas(), "mde": mde.to_pandas()}
+
+
+# --------------------------------------------------------------------------- #
+# Cluster Randomization & Synthetic Control (cluster-experiments)
+# --------------------------------------------------------------------------- #
+def run_cluster_randomization_example(n_stores: int = 50, transactions_per_store: int = 100,
+                                      true_effect: float = 5.0, store_sd: float = 10.0,
+                                      seed: int = 42, plot: bool = True) -> pd.DataFrame:
+    """Simulate a store-level cluster-randomized experiment and compare Naive OLS
+    (ignoring clusters) vs. Clustered OLS (cluster-robust standard errors).
+
+    Adapted from:
+    https://david26694.github.io/cluster-experiments/examples/cluster_randomization.html
+    """
+    from cluster_experiments import AnalysisPlan, SimpleMetric, Variant
+
+    rng = np.random.default_rng(seed)
+    stores = pd.DataFrame({
+        "store_id": range(n_stores),
+        "variant": rng.choice([CONTROL, TREATMENT], n_stores),
+    })
+
+    tx_list = []
+    for _, store in stores.iterrows():
+        n_tx = rng.poisson(transactions_per_store)
+        eff = true_effect if store["variant"] == TREATMENT else 0.0
+        store_eff = rng.normal(0.0, store_sd)
+        amounts = rng.normal(50.0 + eff + store_eff, 20.0, n_tx).clip(min=0.0)
+        tx_list.append(pd.DataFrame({
+            "store_id": store["store_id"],
+            "variant": store["variant"],
+            "purchase_amount": amounts,
+        }))
+    tx_df = pd.concat(tx_list, ignore_index=True)
+
+    metrics = [SimpleMetric(alias="purchase_amount", name="purchase_amount")]
+    variants = [Variant(name=CONTROL, is_control=True), Variant(name=TREATMENT, is_control=False)]
+
+    naive_res = AnalysisPlan.from_metrics(
+        metrics=metrics, variants=variants, variant_col="variant", analysis_type="ols"
+    ).analyze(tx_df).to_dataframe().iloc[0]
+
+    clust_res = AnalysisPlan.from_metrics(
+        metrics=metrics, variants=variants, variant_col="variant",
+        analysis_type="clustered_ols", analysis_config={"cluster_cols": ["store_id"]}
+    ).analyze(tx_df).to_dataframe().iloc[0]
+
+    comp = pd.DataFrame([
+        {
+            "Method": "Naive OLS (ignores clusters)",
+            "ATE ($)": round(naive_res["ate"], 2),
+            "Std. Error ($)": round(naive_res["std_error"], 2),
+            "p-value": round(naive_res["p_value"], 4),
+            "95% CI": f"[${naive_res['ate_ci_lower']:.2f}, ${naive_res['ate_ci_upper']:.2f}]",
+        },
+        {
+            "Method": "Clustered OLS (store-level SE)",
+            "ATE ($)": round(clust_res["ate"], 2),
+            "Std. Error ($)": round(clust_res["std_error"], 2),
+            "p-value": round(clust_res["p_value"], 4),
+            "95% CI": f"[${clust_res['ate_ci_lower']:.2f}, ${clust_res['ate_ci_upper']:.2f}]",
+        },
+    ])
+
+    _header(f"CLUSTER RANDOMIZATION ({n_stores} stores, ~{len(tx_df):,} transactions)")
+    print(comp.to_string(index=False))
+    print("-" * _WIDTH)
+    se_ratio = clust_res["std_error"] / naive_res["std_error"]
+    print(f"  Clustered SE is {se_ratio:.1f}x larger than Naive SE due to intra-store correlation.")
+    print("=" * _WIDTH)
+
+    if plot:
+        fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2))
+        store_means = tx_df.groupby(["store_id", "variant"])["purchase_amount"].mean().reset_index()
+        sns.stripplot(data=store_means, x="variant", y="purchase_amount", hue="variant",
+                      palette=["#4C72B0", "#DD8452"], size=7, jitter=0.18, alpha=0.85,
+                      legend=False, ax=axes[0])
+        axes[0].set_title("Store-level mean purchase amount (each dot = 1 store)")
+        axes[0].set_xlabel("Variant")
+        axes[0].set_ylabel("Mean purchase amount ($)")
+
+        methods = ["Naive OLS\n(wrong)", "Clustered OLS\n(correct)"]
+        ates = [naive_res["ate"], clust_res["ate"]]
+        ci_half = [naive_res["ate_ci_upper"] - naive_res["ate"],
+                   clust_res["ate_ci_upper"] - clust_res["ate"]]
+        axes[1].errorbar(ates, methods, xerr=ci_half, fmt="o", color="#C44E52",
+                         ecolor="#4C72B0", elinewidth=2.5, capsize=6, markersize=7)
+        axes[1].axvline(0, color="black", ls="--", lw=1, label="Zero effect")
+        axes[1].axvline(true_effect, color="#55A868", ls=":", lw=1.5, label=f"True effect (+${true_effect:.0f})")
+        axes[1].set_title("95% CI: Naive OLS vs. Clustered OLS")
+        axes[1].set_xlabel("Estimated treatment effect ($)")
+        axes[1].legend(loc="lower right")
+        plt.tight_layout()
+        plt.show()
+
+    return comp
+
+
+def run_synthetic_control_example(n_clusters: int = 15, effects=(0, 5, 10, 15, 20),
+                                  n_simulations: int = 30, seed: int = 42,
+                                  plot: bool = True) -> pd.DataFrame:
+    """Run a single-treated-cluster experiment and compare Synthetic Control vs.
+    Clustered OLS power curves (including false-positive rate at effect = 0).
+
+    Adapted from:
+    https://david26694.github.io/cluster-experiments/synthetic_control.html
+    """
+    from cluster_experiments.experiment_analysis import ClusteredOLSAnalysis, SyntheticControlAnalysis
+    from cluster_experiments.perturbator import ConstantPerturbator
+    from cluster_experiments.power_analysis import PowerAnalysis, PowerAnalysisWithPreExperimentData
+    from cluster_experiments.random_splitter import FixedSizeClusteredSplitter
+
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2022-01-01", "2022-01-30", freq="D")
+    clusters = [f"Cluster {i}" for i in range(n_clusters)]
+    df_sc = pd.DataFrame(list(product(clusters, dates)), columns=["cluster", "date"])
+    df_sc["target"] = rng.normal(100.0, 10.0, size=len(df_sc))
+    intervention_date = "2022-01-15"
+
+    splitter = FixedSizeClusteredSplitter(n_treatment_clusters=1, cluster_cols=["cluster"])
+    perturbator = ConstantPerturbator(average_effect=10)
+    sc_analysis = SyntheticControlAnalysis(
+        cluster_cols=["cluster"], time_col="date", intervention_date=intervention_date
+    )
+    pw_sc = PowerAnalysisWithPreExperimentData(
+        splitter=splitter, analysis=sc_analysis, n_simulations=n_simulations,
+        perturbator=perturbator, seed=seed
+    )
+    point_estimates = list(pw_sc.simulate_point_estimate(df_sc))
+    p_synth = pw_sc.power_line(df_sc, average_effects=list(effects), n_jobs=1, verbose=False)
+
+    ols_analysis = ClusteredOLSAnalysis(cluster_cols=["cluster"])
+    pw_ols = PowerAnalysis(
+        perturbator=perturbator, splitter=splitter, analysis=ols_analysis,
+        n_simulations=max(n_simulations, 80), seed=seed
+    )
+    p_ols = pw_ols.power_line(
+        df_sc.query(f"date > '{intervention_date}'"),
+        average_effects=list(effects), n_jobs=1, verbose=False
+    )
+
+    power_df = pd.DataFrame({
+        "Effect size": list(effects),
+        "Synthetic Control power": [float(p_synth[e]) for e in effects],
+        "Clustered OLS power": [float(p_ols[e]) for e in effects],
+    })
+
+    _header("SYNTHETIC CONTROL vs. CLUSTERED OLS (1 treated cluster)")
+    _row("Point estimate mean (true=+10):", f"{np.mean(point_estimates):.2f}  (sd={np.std(point_estimates):.2f})")
+    print("-" * _WIDTH)
+    print(power_df.to_string(index=False))
+    print("-" * _WIDTH)
+    print(f"  At effect=0 (false-positive rate): Synthetic Control = {power_df.iloc[0, 1]:.0%}, "
+          f"Clustered OLS = {power_df.iloc[0, 2]:.0%} (breaks with 1 treated cluster!).")
+    print("=" * _WIDTH)
+
+    if plot:
+        fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2))
+        sns.histplot(point_estimates, bins=14, color="#4C72B0", alpha=0.65, ax=axes[0])
+        axes[0].axvline(10.0, color="#C44E52", ls="--", lw=2, label="True effect (+10)")
+        axes[0].axvline(np.mean(point_estimates), color="#55A868", lw=2,
+                        label=f"Mean estimate ({np.mean(point_estimates):.2f})")
+        axes[0].set_title("Synthetic Control point estimates (true = +10)")
+        axes[0].set_xlabel("Estimated effect")
+        axes[0].legend()
+
+        axes[1].plot(power_df["Effect size"], power_df["Synthetic Control power"],
+                     marker="o", lw=2.2, color="#4C72B0", label="Synthetic Control")
+        axes[1].plot(power_df["Effect size"], power_df["Clustered OLS power"],
+                     marker="s", lw=2.2, ls="--", color="#C44E52", label="Clustered OLS (1 treated cluster)")
+        axes[1].axhline(0.05, color="black", ls=":", lw=1, label="Nominal alpha (5%)")
+        axes[1].yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+        axes[1].set_title("Power curve & false-positive rate at effect = 0")
+        axes[1].set_xlabel("True effect size")
+        axes[1].set_ylabel("Rejection rate (Power)")
+        axes[1].legend(loc="lower right")
+        plt.tight_layout()
+        plt.show()
+
+    return power_df
