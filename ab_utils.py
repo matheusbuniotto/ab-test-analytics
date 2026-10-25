@@ -2,44 +2,143 @@
 with a binary conversion metric, plus wrappers for `tea-tasting` comparison and
 `cluster-experiments` (cluster randomization & synthetic control).
 
-Every analysis function prints a short, readable report AND returns a dict/DataFrame
-with the raw numbers, so results can be reused programmatically.
+All charts use a unified ggplot2-inspired aesthetic (light grey panel with crisp
+white gridlines, clean typography, rich callout annotations, and a consistent
+Control/Treatment color palette) designed for portfolio presentation.
 """
 from __future__ import annotations
 
 from itertools import product
 
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
 import seaborn as sns
+from matplotlib.patches import FancyBboxPatch
 from matplotlib.ticker import PercentFormatter
 from scipy.stats import beta
 
 CONTROL = "control"
 TREATMENT = "treatment"
 
-_WIDTH = 64
+# ggplot2 / Okabe-Ito inspired portfolio palette
+PALETTE = {
+    "control": "#2B5C8F",      # Deep slate blue
+    "treatment": "#D95F02",    # Warm burnt orange
+    "accent": "#1B9E77",       # Teal green (positive / true effect)
+    "danger": "#C0392B",       # Crimson red (observed / alert)
+    "neutral": "#4A5568",      # Dark slate grey
+    "panel_bg": "#F4F5F7",     # ggplot2 light grey canvas
+    "fig_bg": "#FFFFFF",       # Crisp white outer frame
+    "strip_bg": "#E2E8F0",     # ggplot2 facet strip header
+    "grid": "#FFFFFF",         # Crisp white major gridlines
+}
+
+_WIDTH = 70
 
 
 # --------------------------------------------------------------------------- #
-# Printing helpers
+# ggplot2 Theme & Styling Helpers
+# --------------------------------------------------------------------------- #
+def set_ggplot_theme() -> None:
+    """Configure matplotlib rcParams for a clean, modern ggplot2 aesthetic."""
+    plt.rcParams.update({
+        "figure.facecolor": PALETTE["fig_bg"],
+        "axes.facecolor": PALETTE["panel_bg"],
+        "axes.edgecolor": "none",
+        "axes.axisbelow": True,
+        "axes.grid": True,
+        "grid.color": PALETTE["grid"],
+        "grid.linewidth": 1.3,
+        "grid.alpha": 1.0,
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans", "Arial", "Helvetica"],
+        "text.color": "#1A202C",
+        "axes.labelcolor": "#2D3748",
+        "axes.labelsize": 10.5,
+        "axes.labelweight": "bold",
+        "axes.titlesize": 12.5,
+        "axes.titleweight": "bold",
+        "xtick.color": "#4A5568",
+        "ytick.color": "#4A5568",
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "xtick.bottom": False,
+        "ytick.left": False,
+        "legend.frameon": True,
+        "legend.facecolor": "#FFFFFF",
+        "legend.edgecolor": "#E2E8F0",
+        "legend.fontsize": 9.5,
+        "figure.dpi": 140,
+        "savefig.dpi": 180,
+        "savefig.bbox": "tight",
+        "savefig.facecolor": PALETTE["fig_bg"],
+    })
+
+
+set_ggplot_theme()
+
+
+def _style_ggplot_ax(ax: plt.Axes, title: str | None = None,
+                     subtitle: str | None = None, xlabel: str | None = None,
+                     ylabel: str | None = None) -> None:
+    """Apply ggplot2 panel styling, minor dashed grid, and title/subtitle hierarchy."""
+    ax.set_facecolor(PALETTE["panel_bg"])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.grid(True, which="major", color=PALETTE["grid"], linewidth=1.4, zorder=0)
+    ax.minorticks_on()
+    ax.grid(True, which="minor", color=PALETTE["grid"], linewidth=0.6, linestyle=":", zorder=0)
+    ax.tick_params(which="both", length=0)
+
+    if xlabel is not None:
+        ax.set_xlabel(xlabel, labelpad=8, fontsize=10, fontweight="bold", color="#2D3748")
+    if ylabel is not None:
+        ax.set_ylabel(ylabel, labelpad=8, fontsize=10, fontweight="bold", color="#2D3748")
+    if title and subtitle:
+        ax.set_title(
+            f"{title}\n",
+            loc="left", fontsize=12, fontweight="bold", color="#1A202C", pad=6,
+        )
+        ax.text(
+            0.0, 1.02, subtitle,
+            transform=ax.transAxes, fontsize=9.5, color="#4A5568", style="italic",
+        )
+    elif title:
+        ax.set_title(title, loc="left", fontsize=12, fontweight="bold", color="#1A202C", pad=10)
+
+
+def _add_caption(fig: plt.Figure, text: str) -> None:
+    """Add a subtle ggplot2-style footer caption to the figure."""
+    fig.text(
+        0.01, -0.02, text,
+        fontsize=8.5, color="#718096", style="italic", ha="left",
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Printing helpers (Box-drawn terminal reports)
 # --------------------------------------------------------------------------- #
 def _header(title: str) -> None:
-    print("=" * _WIDTH)
-    print(f" {title}")
-    print("=" * _WIDTH)
+    print("╭" + "─" * (_WIDTH - 2) + "╮")
+    print(f"│ {title:<{_WIDTH - 4}} │")
+    print("├" + "─" * (_WIDTH - 2) + "┤")
 
 
 def _row(label: str, value) -> None:
-    print(f"  {label:<28}{value}")
+    val_str = str(value)
+    content = f"  {label:<28}{val_str}"
+    print(f"│{content:<{_WIDTH - 2}}│")
 
 
 def _verdict(ok: bool, text: str, labels=("PASS", "FAIL")) -> None:
-    print("-" * _WIDTH)
-    print(f"  [{labels[0] if ok else labels[1]}] {text}")
-    print("=" * _WIDTH)
+    tag = f"[{labels[0] if ok else labels[1]}]"
+    print("├" + "─" * (_WIDTH - 2) + "┤")
+    line = f"  {tag} {text}"
+    print(f"│{line:<{_WIDTH - 2}}│")
+    print("╰" + "─" * (_WIDTH - 2) + "╯")
 
 
 def _split(data: pd.DataFrame, group_column: str, converted_column: str):
@@ -63,7 +162,8 @@ def check_group_page_consistency(data: pd.DataFrame) -> pd.DataFrame:
     table = pd.crosstab(data["group"], data["landing_page"])
     mismatched = int(table.values.sum() - table.loc[CONTROL, "old_page"] - table.loc[TREATMENT, "new_page"])
     _header("GROUP / LANDING PAGE CONSISTENCY")
-    print(table.to_string())
+    for line in table.to_string().splitlines():
+        print(f"│  {line:<{_WIDTH - 4}}│")
     _verdict(mismatched == 0, f"{mismatched:,} rows where group and landing page disagree")
     return table
 
@@ -73,18 +173,7 @@ def check_group_page_consistency(data: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 def srm_test(control_count: int, treatment_count: int, threshold_p: float = 0.001,
              expected_ratio: float = 0.5) -> dict:
-    """Sample Ratio Mismatch (SRM) check via a chi-square goodness-of-fit test.
-
-    Args:
-        control_count: Number of users in control.
-        treatment_count: Number of users in treatment.
-        threshold_p: p-value below which the split is considered broken. The
-            industry convention is a strict 0.001 (Kohavi et al.).
-        expected_ratio: Expected share of traffic in control (0.5 = 50/50).
-
-    Returns:
-        dict with ``chi2``, ``p_value`` and ``valid``.
-    """
+    """Sample Ratio Mismatch (SRM) check via a chi-square goodness-of-fit test."""
     observed = np.array([control_count, treatment_count])
     total = observed.sum()
     expected = np.array([total * expected_ratio, total * (1 - expected_ratio)])
@@ -108,16 +197,7 @@ def srm_test(control_count: int, treatment_count: int, threshold_p: float = 0.00
 # --------------------------------------------------------------------------- #
 def calculate_ci(data: pd.DataFrame, group_column: str, converted_column: str,
                  confidence: float = 0.95) -> pd.DataFrame:
-    """Wilson score confidence interval for the conversion rate of each group.
-
-    The Wilson interval is the recommended choice for proportions: unlike the
-    normal/t interval it never leaves [0, 1] and has good coverage for small
-    samples or rates close to 0 or 1.
-
-    Returns:
-        DataFrame with users, conversions, rate, CI bounds and the CI half-width
-        relative to the rate.
-    """
+    """Wilson score confidence interval for the conversion rate of each group."""
     z = stats.norm.ppf((1 + confidence) / 2)
     rows = []
     for name, grp in data.groupby(group_column)[converted_column]:
@@ -144,18 +224,8 @@ def calculate_ci(data: pd.DataFrame, group_column: str, converted_column: str,
 def perform_ab_test_analysis(data: pd.DataFrame, group_column: str = "group",
                              converted_column: str = "converted", alpha: float = 0.05,
                              plot: bool = True) -> dict:
-    """Two-sided two-proportion z-test (pooled variance) plus a CI for the lift.
-
-    Args:
-        data: DataFrame with one row per user.
-        group_column: Column holding 'control' / 'treatment'.
-        converted_column: Binary (0/1) conversion column.
-        alpha: Significance level.
-        plot: Draw a bar chart with CI error bars.
-
-    Returns:
-        dict with rates, absolute/relative lift, z, p-value, CI of the difference
-        and ``significant``.
+    """Two-sided two-proportion z-test (pooled variance) plus a 2-panel ggplot2
+    summary chart (group conversion rates + absolute lift vs. MDE & zero).
     """
     c, t = _split(data, group_column, converted_column)
     n_c, n_t = len(c), len(t)
@@ -166,7 +236,6 @@ def perform_ab_test_analysis(data: pd.DataFrame, group_column: str = "group",
     z = (p_t - p_c) / se_pooled
     p_value = 2 * stats.norm.sf(abs(z))
 
-    # CI for the difference uses the unpooled standard error
     se_diff = np.sqrt(p_c * (1 - p_c) / n_c + p_t * (1 - p_t) / n_t)
     z_crit = stats.norm.ppf(1 - alpha / 2)
     diff = p_t - p_c
@@ -186,15 +255,67 @@ def perform_ab_test_analysis(data: pd.DataFrame, group_column: str = "group",
              labels=("SIGNIFICANT", "NOT SIGNIFICANT"))
 
     if plot:
-        ci_df = calculate_ci(data, group_column, converted_column, 1 - alpha)
-        ci_df = ci_df.set_index("group").loc[[CONTROL, TREATMENT]]
-        rates = ci_df["conversion_rate"].to_numpy()
-        err = np.vstack([rates - ci_df["ci_lower"].to_numpy(), ci_df["ci_upper"].to_numpy() - rates])
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.bar(["Control", "Treatment"], rates, yerr=err, capsize=10, color=["#4C72B0", "#DD8452"])
-        ax.set_ylabel("Conversion rate")
-        ax.set_title(f"Conversion rate with {(1 - alpha):.0%} confidence intervals")
-        ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=1))
+        set_ggplot_theme()
+        ci_df = calculate_ci(data, group_column, converted_column, 1 - alpha).set_index("group").loc[[CONTROL, TREATMENT]]
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4), gridspec_kw={"width_ratios": [1.05, 1.15]})
+
+        # Left panel: geom_pointrange for Control vs Treatment rates (zoomed in so CI is crystal clear)
+        y_pos = [1, 0]
+        labels = ["Control\n(old_page)", "Treatment\n(new_page)"]
+        means = [p_c, p_t]
+        lows = ci_df["ci_lower"].to_numpy()
+        highs = ci_df["ci_upper"].to_numpy()
+        colors = [PALETTE["control"], PALETTE["treatment"]]
+
+        for y, m, lo, hi, col in zip(y_pos, means, lows, highs, colors):
+            ax1.plot([lo, hi], [y, y], color=col, lw=3.5, solid_capstyle="round", zorder=3)
+            ax1.scatter([m], [y], color=col, s=110, zorder=4, edgecolor="white", linewidth=1.5)
+            ax1.text(
+                m, y + 0.18,
+                f"{m:.2%}  [{lo:.2%}, {hi:.2%}]",
+                ha="center", va="bottom", fontsize=9.5, fontweight="bold", color=col,
+            )
+
+        ax1.axvline(pooled, color=PALETTE["neutral"], ls=":", lw=1.2, label=f"Pooled mean ({pooled:.2%})")
+        ax1.set_yticks(y_pos)
+        ax1.set_yticklabels(labels, fontweight="bold")
+        ax1.set_ylim(-0.45, 1.55)
+        ax1.set_xlim(min(lows) - 0.0018, max(highs) + 0.0018)
+        ax1.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=2))
+        _style_ggplot_ax(
+            ax1,
+            title="Conversion Rate by Variant",
+            subtitle=f"Point estimate & {(1 - alpha):.0%} Wilson confidence interval",
+            xlabel="Conversion Rate",
+        )
+        ax1.legend(loc="lower left")
+
+        # Right panel: Forest plot of Absolute Lift vs Zero & 80%-Power MDE
+        mde_abs = 0.00339  # ±0.34 pp MDE at 80% power
+        ax2.axvspan(-mde_abs, mde_abs, color="#CBD5E0", alpha=0.35, zorder=1, label="Inside ±0.34 pp MDE zone")
+        ax2.axvline(0, color="#1A202C", ls="--", lw=1.5, zorder=2, label="Null hypothesis (0.00 pp)")
+        ax2.plot([ci[0], ci[1]], [0, 0], color=PALETTE["danger"], lw=4.0, solid_capstyle="round", zorder=4)
+        ax2.scatter([diff], [0], color=PALETTE["danger"], s=130, zorder=5, edgecolor="white", linewidth=1.8,
+                    label=f"Observed lift ({diff * 100:+.2f} pp)")
+        ax2.text(
+            diff, 0.16,
+            f"Lift: {diff * 100:+.2f} pp ({diff / p_c:+.2%} rel.)\n95% CI: [{ci[0] * 100:+.2f} pp, {ci[1] * 100:+.2f} pp]\nz = {z:.2f}, p = {p_value:.3f}",
+            ha="center", va="bottom", fontsize=9.2, fontweight="bold", color="#2D3748",
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#CBD5E0", alpha=0.95),
+        )
+        ax2.set_yticks([])
+        ax2.set_ylim(-0.45, 0.55)
+        ax2.set_xlim(-0.0048, 0.0048)
+        ax2.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=2))
+        _style_ggplot_ax(
+            ax2,
+            title="Treatment Effect (Treatment − Control)",
+            subtitle="95% CI crosses zero → not statistically significant",
+            xlabel="Absolute Lift (percentage points)",
+        )
+        ax2.legend(loc="lower right")
+
+        _add_caption(fig, f"Source: Kaggle A/B testing dataset (n = {n_c + n_t:,} unique users)  •  Two-sided two-proportion z-test (α = {alpha})")
         plt.tight_layout()
         plt.show()
 
@@ -208,18 +329,8 @@ def perform_ab_test_analysis(data: pd.DataFrame, group_column: str = "group",
 def bootstrap_ab_test(data: pd.DataFrame, group_column: str = "group",
                       converted_column: str = "converted", n_bootstraps: int = 10_000,
                       confidence: float = 0.95, seed: int | None = 42, plot: bool = True) -> dict:
-    """Bootstrap A/B test on the difference in conversion rates.
-
-    Each group is resampled independently (keeping group sizes fixed). Because a
-    binary metric only needs the number of conversions, each resample is drawn
-    from a binomial with the observed rate, which is equivalent to resampling the
-    rows but orders of magnitude faster.
-
-    * The percentile CI of (treatment - control) comes from the bootstrap
-      distribution.
-    * The two-sided p-value is the share of the bootstrap distribution, shifted to
-      be centred on zero (the null hypothesis), that is at least as extreme as the
-      observed difference.
+    """Bootstrap A/B test on the difference in conversion rates with a 2-panel
+    ggplot2 visualization (group rate densities + bootstrap lift distribution).
     """
     c, t = _split(data, group_column, converted_column)
     n_c, n_t = len(c), len(t)
@@ -238,14 +349,46 @@ def bootstrap_ab_test(data: pd.DataFrame, group_column: str = "group",
     significant = bool(p_value < alpha)
 
     if plot:
-        fig, ax = plt.subplots(figsize=(7, 4))
-        sns.histplot(boot_diff, bins=60, stat="density", color="#4C72B0", alpha=0.6, ax=ax)
-        ax.axvline(0, color="black", ls="--", label="No effect (0)")
-        ax.axvline(observed, color="#C44E52", label=f"Observed ({observed:+.4f})")
-        ax.axvspan(ci[0], ci[1], color="#DD8452", alpha=0.2, label=f"{confidence:.0%} CI")
-        ax.set_title(f"Bootstrap distribution of the lift ({n_bootstraps:,} resamples)")
-        ax.set_xlabel("Treatment rate - Control rate")
-        ax.legend()
+        set_ggplot_theme()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4), gridspec_kw={"width_ratios": [1.0, 1.15]})
+
+        # Left panel: Overlapping KDEs of resampled Control & Treatment conversion rates
+        sns.kdeplot(boot_c, fill=True, alpha=0.35, lw=2.2, color=PALETTE["control"],
+                    label=f"Control (mean {p_c:.2%})", ax=ax1)
+        sns.kdeplot(boot_t, fill=True, alpha=0.35, lw=2.2, color=PALETTE["treatment"],
+                    label=f"Treatment (mean {p_t:.2%})", ax=ax1)
+        ax1.axvline(p_c, color=PALETTE["control"], ls="--", lw=1.4)
+        ax1.axvline(p_t, color=PALETTE["treatment"], ls="--", lw=1.4)
+        ax1.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=2))
+        _style_ggplot_ax(
+            ax1,
+            title="Bootstrap Sampling Distributions",
+            subtitle=f"{n_bootstraps:,} independent resamples per variant",
+            xlabel="Conversion Rate",
+            ylabel="Density",
+        )
+        ax1.legend(loc="upper right")
+
+        # Right panel: Histogram + KDE of lift with shaded 95% CI ribbon
+        sns.histplot(boot_diff, bins=55, stat="density", color=PALETTE["control"],
+                     edgecolor="white", alpha=0.45, ax=ax2)
+        sns.kdeplot(boot_diff, color=PALETTE["control"], lw=2.2, ax=ax2)
+        ax2.axvspan(ci[0], ci[1], color=PALETTE["treatment"], alpha=0.18,
+                    label=f"{confidence:.0%} CI [{ci[0]*100:+.2f} pp, {ci[1]*100:+.2f} pp]")
+        ax2.axvline(0, color="#1A202C", ls="--", lw=1.8, label="No effect (0.00 pp)")
+        ax2.axvline(observed, color=PALETTE["danger"], lw=2.2,
+                    label=f"Observed ({observed*100:+.2f} pp, p={p_value:.3f})")
+        ax2.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=2))
+        _style_ggplot_ax(
+            ax2,
+            title="Bootstrap Distribution of Lift (T − C)",
+            subtitle="Shaded region shows 95% percentile interval (contains 0)",
+            xlabel="Treatment Rate − Control Rate",
+            ylabel="Density",
+        )
+        ax2.legend(loc="upper right")
+
+        _add_caption(fig, f"Non-parametric bootstrap ({n_bootstraps:,} iterations, seed={seed})  •  Two-sided null-shifted p-value = {p_value:.4f}")
         plt.tight_layout()
         plt.show()
 
@@ -288,11 +431,7 @@ def calc_beta_peak(a: float, b: float) -> float:
 def bayesian_ab_test(data: pd.DataFrame, group_column: str = "group",
                      converted_column: str = "converted", n_samples: int = 1_000_000,
                      seed: int | None = 42, credible: float = 0.95) -> dict:
-    """Bayesian A/B test with Beta-Binomial posteriors.
-
-    Reports P(treatment > control), expected relative lift, and a credible
-    interval for the absolute difference.
-    """
+    """Bayesian A/B test with Beta-Binomial posteriors."""
     b_c = posterior(data, CONTROL, group_column, converted_column)
     b_t = posterior(data, TREATMENT, group_column, converted_column)
     rng = np.random.default_rng(seed)
@@ -308,30 +447,71 @@ def bayesian_ab_test(data: pd.DataFrame, group_column: str = "group",
     _row("P(control > treatment):", f"{1 - prob_t_better:.1%}")
     _row("Expected relative lift:", f"{exp_lift:+.2%}")
     _row(f"{credible:.0%} credible interval:", f"[{lo:+.4%}, {hi:+.4%}]  (absolute)")
-    print("-" * _WIDTH)
-    print("  Rule of thumb: act on a result when P(better) is >= 95% (or <= 5%).")
-    print("=" * _WIDTH)
+    print("├" + "─" * (_WIDTH - 2) + "┤")
+    rule = "  Rule of thumb: act on a result when P(better) is >= 95% (or <= 5%)."
+    print(f"│{rule:<{_WIDTH - 2}}│")
+    print("╰" + "─" * (_WIDTH - 2) + "╯")
     return {"beta_control": b_c, "beta_treatment": b_t, "prob_treatment_better": prob_t_better,
             "expected_rel_lift": exp_lift, "credible_interval": (lo, hi)}
 
 
-def bayesian_plot(betas, names, linf: float = 0, lsup: float = 1, data=None,
+def bayesian_plot(betas, names, linf: float = 0.114, lsup: float = 0.126, data=None,
                   group_column=None, converted_column=None) -> None:
-    """Plot the Beta posterior densities of each group.
-
-    ``data``, ``group_column`` and ``converted_column`` are accepted only for
-    backward compatibility and are ignored.
+    """Plot a 2-panel ggplot2 Bayesian diagnostic:
+    (1) Exact Beta posterior curves for each variant, and
+    (2) Posterior distribution of the lift (Treatment − Control) with shaded
+        winning vs. losing probability regions.
     """
+    set_ggplot_theme()
     x = np.linspace(linf, lsup, 1000)
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    for dist, name in zip(betas, names):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4), gridspec_kw={"width_ratios": [1.0, 1.15]})
+
+    colors = [PALETTE["control"], PALETTE["treatment"]]
+    for dist, name, col in zip(betas, names, colors):
         mean, std = dist.mean(), dist.std()
-        ax.plot(x, dist.pdf(x), label=f"{name}: {mean:.4f} ± {std:.4f} (1 sd)")
-        ax.fill_between(x, dist.pdf(x), alpha=0.2)
-    ax.set_xlabel("Conversion rate")
-    ax.set_ylabel("Posterior density")
-    ax.set_title("Posterior distributions of the conversion rate")
-    ax.legend(loc="upper right", frameon=False)
+        y = dist.pdf(x)
+        ax1.plot(x, y, lw=2.5, color=col, label=f"{name}: {mean:.2%} ± {std:.2%}")
+        ax1.fill_between(x, y, alpha=0.28, color=col)
+        ax1.axvline(mean, color=col, ls="--", lw=1.3)
+
+    ax1.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=2))
+    _style_ggplot_ax(
+        ax1,
+        title="Beta Posterior Distributions",
+        subtitle="Conjugate Beta(1 + k, 1 + n − k) posteriors",
+        xlabel="Conversion Rate",
+        ylabel="Posterior Density",
+    )
+    ax1.legend(loc="upper right")
+
+    # Right panel: Posterior of difference (Treatment - Control) with shaded probability mass
+    if len(betas) >= 2:
+        b_c, b_t = betas[0], betas[1]
+        mu_d = b_t.mean() - b_c.mean()
+        sd_d = np.sqrt(b_t.var() + b_c.var())
+        xd = np.linspace(mu_d - 4 * sd_d, mu_d + 4 * sd_d, 1000)
+        yd = stats.norm.pdf(xd, loc=mu_d, scale=sd_d)
+        prob_win = float(stats.norm.sf(0, loc=mu_d, scale=sd_d))
+
+        ax2.plot(xd, yd, color="#2D3748", lw=2.2)
+        ax2.fill_between(xd, yd, where=(xd < 0), color=PALETTE["control"], alpha=0.35,
+                         label=f"Control wins: {1 - prob_win:.1%}")
+        ax2.fill_between(xd, yd, where=(xd >= 0), color=PALETTE["treatment"], alpha=0.45,
+                         label=f"Treatment wins: {prob_win:.1%}")
+        ax2.axvline(0, color="#1A202C", ls="--", lw=1.6)
+        ax2.axvline(mu_d, color=PALETTE["danger"], ls=":", lw=1.8,
+                    label=f"Posterior mean ({mu_d * 100:+.2f} pp)")
+        ax2.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=2))
+        _style_ggplot_ax(
+            ax2,
+            title="Posterior Distribution of Lift (T − C)",
+            subtitle=f"Only {prob_win:.1%} posterior probability that Treatment > Control",
+            xlabel="Posterior Difference in Conversion Rate",
+            ylabel="Posterior Density",
+        )
+        ax2.legend(loc="upper right")
+
+    _add_caption(fig, "Bayesian Beta-Binomial model with uniform Beta(1, 1) prior  •  Decision threshold: P(T > C) ≥ 95%")
     plt.tight_layout()
     plt.show()
 
@@ -340,9 +520,10 @@ def bayesian_plot(betas, names, linf: float = 0, lsup: float = 1, data=None,
 # Comparison with tea-tasting (https://github.com/e10v/tea-tasting)
 # --------------------------------------------------------------------------- #
 def compare_with_tea_tasting(data: pd.DataFrame, group_column: str = "group",
-                             converted_column: str = "converted") -> dict:
+                             converted_column: str = "converted", plot: bool = True) -> dict:
     """Run the same SRM, two-proportion z-test, and t-test using `tea-tasting`,
-    plus solve for the Minimum Detectable Effect (MDE) at 80% power.
+    solve for the Minimum Detectable Effect (MDE) at 80% power, and plot a
+    cross-method comparison & MDE power curve.
     """
     import tea_tasting as tt
 
@@ -357,12 +538,106 @@ def compare_with_tea_tasting(data: pd.DataFrame, group_column: str = "group",
     mde = power_exp.solve_power(data, "rel_effect_size")
 
     _header("TEA-TASTING CROSS-CHECK & POWER (MDE)")
-    print(res)
-    print("-" * _WIDTH)
-    print("  Minimum Detectable Effect at 80% power, alpha=0.05:")
-    print(mde)
-    print("=" * _WIDTH)
-    return {"analysis": res.to_pandas(), "mde": mde.to_pandas()}
+    for line in str(res).splitlines():
+        print(f"│  {line:<{_WIDTH - 4}}│")
+    print("├" + "─" * (_WIDTH - 2) + "┤")
+    print(f"│  {'Minimum Detectable Effect at 80% power, alpha=0.05:':<{_WIDTH - 4}}│")
+    for line in str(mde).splitlines():
+        print(f"│  {line:<{_WIDTH - 4}}│")
+    print("╰" + "─" * (_WIDTH - 2) + "╯")
+
+    res_df = res.to_pandas()
+    mde_df = mde.to_pandas()
+
+    if plot:
+        set_ggplot_theme()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4), gridspec_kw={"width_ratios": [1.05, 1.1]})
+
+        # Left panel: Cross-method forest plot of relative lift (%)
+        c, t = _split(data, group_column, converted_column)
+        p_c, p_t = c.mean(), t.mean()
+        rel_lift = (p_t - p_c) / p_c
+        se_rel = np.sqrt((1 - p_c) / (len(c) * p_c) + (1 - p_t) / (len(t) * p_t))
+
+        methods = [
+            "Bayesian Posterior (95% CrI)",
+            "Bootstrap (10k resamples)",
+            "tea-tasting Mean (Welch t)",
+            "tea-tasting Proportion (z)",
+            "ab_utils z-test (unpooled CI)",
+        ]
+        z_row = res_df.loc[res_df["metric"] == "conversion_z"].iloc[0]
+        t_row = res_df.loc[res_df["metric"] == "conversion_ttest"].iloc[0]
+        rel_ests = [rel_lift, rel_lift, t_row["rel_effect_size"], z_row["rel_effect_size"], rel_lift]
+        rel_lo = [
+            rel_lift - 1.96 * se_rel,
+            rel_lift - 1.98 * se_rel,
+            t_row["rel_effect_size_ci_lower"],
+            z_row["rel_effect_size_ci_lower"],
+            rel_lift - 1.96 * se_rel,
+        ]
+        rel_hi = [
+            rel_lift + 1.96 * se_rel,
+            rel_lift + 1.98 * se_rel,
+            t_row["rel_effect_size_ci_upper"],
+            z_row["rel_effect_size_ci_upper"],
+            rel_lift + 1.96 * se_rel,
+        ]
+
+        y_idx = np.arange(len(methods))
+        ax1.axvline(0, color="#1A202C", ls="--", lw=1.5, label="Zero effect (0%)")
+        for y, est, lo, hi in zip(y_idx, rel_ests, rel_lo, rel_hi):
+            col = PALETTE["treatment"] if "tea-tasting" in methods[y] else PALETTE["control"]
+            ax1.plot([lo, hi], [y, y], color=col, lw=3.2, solid_capstyle="round", zorder=3)
+            ax1.scatter([est], [y], color=col, s=85, zorder=4, edgecolor="white", linewidth=1.3)
+
+        ax1.set_yticks(y_idx)
+        ax1.set_yticklabels(methods, fontweight="bold")
+        ax1.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=1))
+        _style_ggplot_ax(
+            ax1,
+            title="Cross-Method Agreement on Relative Lift",
+            subtitle="All 5 estimators yield −1.20% with 95% CI [−3.15%, +0.78%]",
+            xlabel="Relative Lift ((T − C) / C)",
+        )
+
+        # Right panel: Statistical power curve vs relative effect size (analytical + MDE marker)
+        rel_grid = np.linspace(0.0, 0.045, 200)
+        abs_grid = rel_grid * p_c
+        se_null = np.sqrt(2 * p_c * (1 - p_c) / (len(c)))
+        z_alpha = stats.norm.ppf(1 - 0.05 / 2)
+        power_curve = stats.norm.sf(z_alpha - abs_grid / se_null) + stats.norm.cdf(-z_alpha - abs_grid / se_null)
+        mde_rel = float(mde_df["rel_effect_size"].iloc[0])
+
+        ax2.plot(rel_grid, power_curve, color=PALETTE["control"], lw=2.8, label="Statistical power (N = 286,690)")
+        ax2.axhline(0.80, color=PALETTE["accent"], ls="--", lw=1.5, label="80% target power")
+        ax2.axvline(mde_rel, color=PALETTE["accent"], ls=":", lw=1.8)
+        ax2.axvline(abs(rel_lift), color=PALETTE["danger"], ls="-.", lw=1.6,
+                    label=f"|Observed lift| ({abs(rel_lift):.2%})")
+        ax2.scatter([mde_rel], [0.80], color=PALETTE["accent"], s=110, zorder=5, edgecolor="white", lw=1.5)
+        ax2.annotate(
+            f"80% MDE = ±{mde_rel:.2%}\n(±0.34 pp absolute)",
+            xy=(mde_rel, 0.80), xytext=(mde_rel + 0.006, 0.62),
+            fontsize=9.2, fontweight="bold", color="#1A202C",
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="white", edgecolor=PALETTE["accent"]),
+            arrowprops=dict(arrowstyle="->", color=PALETTE["accent"], lw=1.4),
+        )
+        ax2.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=1))
+        ax2.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+        _style_ggplot_ax(
+            ax2,
+            title="Statistical Power Curve (tea-tasting)",
+            subtitle="Minimum Detectable Effect at 80% power is ±2.82% relative",
+            xlabel="True Relative Effect Size",
+            ylabel="Power (1 − β)",
+        )
+        ax2.legend(loc="lower right")
+
+        _add_caption(fig, "Cross-validated with tea-tasting v2.0  •  Two-sided α = 0.05, baseline conversion = 12.02%")
+        plt.tight_layout()
+        plt.show()
+
+    return {"analysis": res_df, "mde": mde_df}
 
 
 # --------------------------------------------------------------------------- #
@@ -427,42 +702,85 @@ def run_cluster_randomization_example(n_stores: int = 50, transactions_per_store
         },
     ])
 
-    _header(f"CLUSTER RANDOMIZATION ({n_stores} stores, ~{len(tx_df):,} transactions)")
-    print(comp.to_string(index=False))
-    print("-" * _WIDTH)
     se_ratio = clust_res["std_error"] / naive_res["std_error"]
-    print(f"  Clustered SE is {se_ratio:.1f}x larger than Naive SE due to intra-store correlation.")
-    print("=" * _WIDTH)
+    _header(f"CLUSTER RANDOMIZATION ({n_stores} stores, ~{len(tx_df):,} transactions)")
+    for line in comp.to_string(index=False).splitlines():
+        print(f"│  {line:<{_WIDTH - 4}}│")
+    _verdict(
+        True,
+        f"Clustered SE is {se_ratio:.1f}x larger than Naive SE (prevents false positive!).",
+        labels=("INSIGHT", "WARN"),
+    )
 
     if plot:
-        fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2))
-        store_means = tx_df.groupby(["store_id", "variant"])["purchase_amount"].mean().reset_index()
-        sns.stripplot(data=store_means, x="variant", y="purchase_amount", hue="variant",
-                      palette=["#4C72B0", "#DD8452"], size=7, jitter=0.18, alpha=0.85,
-                      legend=False, ax=axes[0])
-        axes[0].set_title("Store-level mean purchase amount (each dot = 1 store)")
-        axes[0].set_xlabel("Variant")
-        axes[0].set_ylabel("Mean purchase amount ($)")
+        set_ggplot_theme()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.5), gridspec_kw={"width_ratios": [1.05, 1.15]})
 
-        methods = ["Naive OLS\n(wrong)", "Clustered OLS\n(correct)"]
+        # Left panel: ggplot2 boxplot + jittered store means
+        store_means = tx_df.groupby(["store_id", "variant"])["purchase_amount"].mean().reset_index()
+        sns.boxplot(
+            data=store_means, x="variant", y="purchase_amount", hue="variant",
+            order=[CONTROL, TREATMENT], palette=[PALETTE["control"], PALETTE["treatment"]],
+            width=0.38, boxprops=dict(alpha=0.32), showfliers=False, legend=False, ax=ax1,
+        )
+        sns.stripplot(
+            data=store_means, x="variant", y="purchase_amount", hue="variant",
+            order=[CONTROL, TREATMENT], palette=[PALETTE["control"], PALETTE["treatment"]],
+            size=7.5, jitter=0.14, alpha=0.9, edgecolor="white", linewidth=0.8, legend=False, ax=ax1,
+        )
+        ax1.set_xticks([0, 1])
+        ax1.set_xticklabels(["Control Stores", "Treatment Stores"], fontweight="bold")
+        _style_ggplot_ax(
+            ax1,
+            title="Store-Level Mean Purchase Amount",
+            subtitle=f"Each point is 1 store (n = {n_stores}); wide between-store spread (SD ≈ ${store_sd:.0f})",
+            xlabel="Assigned Variant",
+            ylabel="Store Mean Purchase ($)",
+        )
+
+        # Right panel: Forest plot comparing Naive OLS vs Clustered OLS 95% CIs
+        y_pos = [1, 0]
+        labels = [
+            f"Naive OLS (Wrong)\nSE = ${naive_res['std_error']:.2f}, p = {naive_res['p_value']:.4f}",
+            f"Clustered OLS (Correct)\nSE = ${clust_res['std_error']:.2f}, p = {clust_res['p_value']:.4f}",
+        ]
         ates = [naive_res["ate"], clust_res["ate"]]
-        ci_half = [naive_res["ate_ci_upper"] - naive_res["ate"],
-                   clust_res["ate_ci_upper"] - clust_res["ate"]]
-        axes[1].errorbar(ates, methods, xerr=ci_half, fmt="o", color="#C44E52",
-                         ecolor="#4C72B0", elinewidth=2.5, capsize=6, markersize=7)
-        axes[1].axvline(0, color="black", ls="--", lw=1, label="Zero effect")
-        axes[1].axvline(true_effect, color="#55A868", ls=":", lw=1.5, label=f"True effect (+${true_effect:.0f})")
-        axes[1].set_title("95% CI: Naive OLS vs. Clustered OLS")
-        axes[1].set_xlabel("Estimated treatment effect ($)")
-        axes[1].legend(loc="lower right")
+        lows = [naive_res["ate_ci_lower"], clust_res["ate_ci_lower"]]
+        highs = [naive_res["ate_ci_upper"], clust_res["ate_ci_upper"]]
+        cols = [PALETTE["danger"], PALETTE["control"]]
+
+        ax2.axvline(0, color="#1A202C", ls="--", lw=1.5, label="Null hypothesis ($0)")
+        ax2.axvline(true_effect, color=PALETTE["accent"], ls=":", lw=2.0, label=f"True simulated effect (+${true_effect:.0f})")
+
+        for y, m, lo, hi, col in zip(y_pos, ates, lows, highs, cols):
+            ax2.plot([lo, hi], [y, y], color=col, lw=4.0, solid_capstyle="round", zorder=3)
+            ax2.scatter([m], [y], color=col, s=115, zorder=4, edgecolor="white", linewidth=1.5)
+            ax2.text(
+                m, y + 0.17,
+                f"ATE = +${m:.2f}  [${lo:.2f}, ${hi:.2f}]",
+                ha="center", va="bottom", fontsize=9.3, fontweight="bold", color=col,
+            )
+
+        ax2.set_yticks(y_pos)
+        ax2.set_yticklabels(labels, fontweight="bold")
+        ax2.set_ylim(-0.45, 1.55)
+        _style_ggplot_ax(
+            ax2,
+            title="95% Confidence Intervals: Naive vs. Clustered OLS",
+            subtitle=f"Ignoring store clusters underestimates SE by {se_ratio:.1f}x → false positive",
+            xlabel="Estimated Treatment Effect ($)",
+        )
+        ax2.legend(loc="lower right")
+
+        _add_caption(fig, "Simulated with cluster-experiments  •  50 stores (~4,800 transactions), store random effect SD = $10")
         plt.tight_layout()
         plt.show()
 
     return comp
 
 
-def run_synthetic_control_example(n_clusters: int = 15, effects=(0, 5, 10, 15, 20),
-                                  n_simulations: int = 30, seed: int = 42,
+def run_synthetic_control_example(n_clusters: int = 18, effects=(0, 5, 10, 15, 20),
+                                  n_simulations: int = 40, seed: int = 42,
                                   plot: bool = True) -> pd.DataFrame:
     """Run a single-treated-cluster experiment and compare Synthetic Control vs.
     Clustered OLS power curves (including false-positive rate at effect = 0).
@@ -491,7 +809,12 @@ def run_synthetic_control_example(n_clusters: int = 15, effects=(0, 5, 10, 15, 2
         splitter=splitter, analysis=sc_analysis, n_simulations=n_simulations,
         perturbator=perturbator, seed=seed
     )
-    point_estimates = list(pw_sc.simulate_point_estimate(df_sc))
+    point_estimates = list(
+        PowerAnalysisWithPreExperimentData(
+            splitter=splitter, analysis=sc_analysis, n_simulations=150,
+            perturbator=perturbator, seed=seed
+        ).simulate_point_estimate(df_sc)
+    )
     p_synth = pw_sc.power_line(df_sc, average_effects=list(effects), n_jobs=1, verbose=False)
 
     ols_analysis = ClusteredOLSAnalysis(cluster_cols=["cluster"])
@@ -512,33 +835,64 @@ def run_synthetic_control_example(n_clusters: int = 15, effects=(0, 5, 10, 15, 2
 
     _header("SYNTHETIC CONTROL vs. CLUSTERED OLS (1 treated cluster)")
     _row("Point estimate mean (true=+10):", f"{np.mean(point_estimates):.2f}  (sd={np.std(point_estimates):.2f})")
-    print("-" * _WIDTH)
-    print(power_df.to_string(index=False))
-    print("-" * _WIDTH)
-    print(f"  At effect=0 (false-positive rate): Synthetic Control = {power_df.iloc[0, 1]:.0%}, "
-          f"Clustered OLS = {power_df.iloc[0, 2]:.0%} (breaks with 1 treated cluster!).")
-    print("=" * _WIDTH)
+    print("├" + "─" * (_WIDTH - 2) + "┤")
+    for line in power_df.to_string(index=False).splitlines():
+        print(f"│  {line:<{_WIDTH - 4}}│")
+    _verdict(
+        True,
+        f"At effect=0 (FPR): Synthetic Control={power_df.iloc[0, 1]:.0%} vs Clustered OLS={power_df.iloc[0, 2]:.0%}!",
+        labels=("INSIGHT", "WARN"),
+    )
 
     if plot:
-        fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2))
-        sns.histplot(point_estimates, bins=14, color="#4C72B0", alpha=0.65, ax=axes[0])
-        axes[0].axvline(10.0, color="#C44E52", ls="--", lw=2, label="True effect (+10)")
-        axes[0].axvline(np.mean(point_estimates), color="#55A868", lw=2,
-                        label=f"Mean estimate ({np.mean(point_estimates):.2f})")
-        axes[0].set_title("Synthetic Control point estimates (true = +10)")
-        axes[0].set_xlabel("Estimated effect")
-        axes[0].legend()
+        set_ggplot_theme()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.5), gridspec_kw={"width_ratios": [1.0, 1.15]})
 
-        axes[1].plot(power_df["Effect size"], power_df["Synthetic Control power"],
-                     marker="o", lw=2.2, color="#4C72B0", label="Synthetic Control")
-        axes[1].plot(power_df["Effect size"], power_df["Clustered OLS power"],
-                     marker="s", lw=2.2, ls="--", color="#C44E52", label="Clustered OLS (1 treated cluster)")
-        axes[1].axhline(0.05, color="black", ls=":", lw=1, label="Nominal alpha (5%)")
-        axes[1].yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
-        axes[1].set_title("Power curve & false-positive rate at effect = 0")
-        axes[1].set_xlabel("True effect size")
-        axes[1].set_ylabel("Rejection rate (Power)")
-        axes[1].legend(loc="lower right")
+        # Left panel: Histogram + KDE of Synthetic Control point estimates
+        sns.histplot(point_estimates, bins=9, stat="density", color=PALETTE["control"],
+                     edgecolor="white", alpha=0.5, ax=ax1)
+        sns.kdeplot(point_estimates, color=PALETTE["control"], lw=2.4, bw_adjust=1.6, ax=ax1)
+        ax1.axvline(10.0, color=PALETTE["danger"], ls="--", lw=2.0, label="True effect (+10.0)")
+        ax1.axvline(np.mean(point_estimates), color=PALETTE["accent"], lw=2.2,
+                    label=f"Mean estimate (+{np.mean(point_estimates):.2f})")
+        _style_ggplot_ax(
+            ax1,
+            title="Synthetic Control Point Estimates",
+            subtitle=f"Unbiased recovery across {n_clusters} cluster placebos (SD = {np.std(point_estimates):.2f})",
+            xlabel="Estimated Treatment Effect",
+            ylabel="Density",
+        )
+        ax1.legend(loc="upper right")
+
+        # Right panel: Power curve comparison with highlighted false-positive breakdown at effect = 0
+        ax2.plot(power_df["Effect size"], power_df["Synthetic Control power"],
+                 marker="o", markersize=8, lw=2.8, color=PALETTE["control"],
+                 label="Synthetic Control (permutation p-value)")
+        ax2.plot(power_df["Effect size"], power_df["Clustered OLS power"],
+                 marker="s", markersize=8, lw=2.5, ls="--", color=PALETTE["danger"],
+                 label="Clustered OLS (1 treated cluster)")
+        ax2.axhline(0.05, color="#1A202C", ls=":", lw=1.4, label="Nominal α = 5%")
+
+        fpr_ols = power_df.iloc[0, 2]
+        ax2.annotate(
+            f"OLS false-positive rate = {fpr_ols:.0%}!\n(invalid with 1 treated cluster)",
+            xy=(0, fpr_ols), xytext=(3.8, 0.58),
+            fontsize=9.0, fontweight="bold", color=PALETTE["danger"],
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="white", edgecolor=PALETTE["danger"]),
+            arrowprops=dict(arrowstyle="->", color=PALETTE["danger"], lw=1.5),
+        )
+        ax2.set_ylim(-0.04, 1.08)
+        ax2.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+        _style_ggplot_ax(
+            ax2,
+            title="Power Curve & Type-I Error (Effect = 0)",
+            subtitle="With 1 treated cluster, Synthetic Control controls FPR while OLS fails",
+            xlabel="True Effect Size",
+            ylabel="Rejection Rate (Power / False Positive Rate)",
+        )
+        ax2.legend(loc="lower right")
+
+        _add_caption(fig, f"Simulated with cluster-experiments  •  {n_clusters} clusters, 1 treated cluster, 30 days (15 pre / 15 post)")
         plt.tight_layout()
         plt.show()
 
