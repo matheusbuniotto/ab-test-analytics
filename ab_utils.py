@@ -897,3 +897,128 @@ def run_synthetic_control_example(n_clusters: int = 18, effects=(0, 5, 10, 15, 2
         plt.show()
 
     return power_df
+
+
+# --------------------------------------------------------------------------- #
+# Type M (Magnitude) & Type S (Sign) Errors (Gelman & Carlin / Asaas blog)
+# --------------------------------------------------------------------------- #
+def analyze_type_m_s_errors(data: pd.DataFrame, group_column: str = "group",
+                            converted_column: str = "converted", alpha: float = 0.05,
+                            true_rel_lifts=(0.0025, 0.005, 0.01, 0.015, 0.02, 0.0284, 0.05),
+                            seed: int = 42, plot: bool = True) -> pd.DataFrame:
+    """Compute Gelman & Carlin (2014) Type M (exaggeration ratio) and Type S
+    (wrong sign probability) errors across plausible true relative lifts for the
+    experiment's standard error, and render a 2-panel ggplot2 diagnostic.
+
+    Reference:
+    Matheus Buniotto — "O Erro Secreto: O Erro Tipo M em Testes A/B" (Asaas Engineering):
+    https://medium.com/estacao-asaas/o-erro-secreto-o-erro-tipo-m-em-testes-a-b-e5593833bc01
+    """
+    c, t = _split(data, group_column, converted_column)
+    p0 = c.mean()
+    n_harm = 2.0 / (1.0 / len(c) + 1.0 / len(t))
+    se_abs = np.sqrt(2.0 * p0 * (1.0 - p0) / n_harm)
+    se_rel = se_abs / p0
+    z_crit = stats.norm.ppf(1.0 - alpha / 2.0)
+
+    def _retrodesign(a_rel: float):
+        p_hi = 1.0 - stats.norm.cdf(z_crit - a_rel / se_rel)
+        p_lo = stats.norm.cdf(-z_crit - a_rel / se_rel)
+        power = p_hi + p_lo
+        type_s = p_lo / power
+        # Closed-form expectation of |X| given |X| > z_crit * se_rel for X ~ N(a_rel, se_rel^2)
+        z1 = (z_crit * se_rel - a_rel) / se_rel
+        z2 = (-z_crit * se_rel - a_rel) / se_rel
+        e_hi = a_rel * p_hi + se_rel * stats.norm.pdf(z1)
+        e_lo = -a_rel * p_lo + se_rel * stats.norm.pdf(z2)
+        type_m = (e_hi + e_lo) / (power * abs(a_rel))
+        return float(power), float(type_s), float(type_m)
+
+    rows = []
+    for rel in true_rel_lifts:
+        pwr, ts, tm = _retrodesign(rel)
+        rows.append({
+            "True Rel. Lift": f"+{rel:.2%}",
+            "True Abs. Lift": f"+{rel * p0 * 100:.2f} pp",
+            "Power": f"{pwr:.1%}",
+            "Type S (Wrong Sign)": f"{ts:.2%}",
+            "Type M (Exaggeration)": f"{tm:.2f}x",
+            "Avg. Winner Reported": f"+{rel * tm:.2%}",
+        })
+    df_ms = pd.DataFrame(rows)
+
+    _header("TYPE M (MAGNITUDE) & TYPE S (SIGN) ERROR AUDIT")
+    for line in df_ms.to_string(index=False).splitlines():
+        print(f"│  {line:<{_WIDTH - 4}}│")
+    _verdict(
+        True,
+        "Underpowered 'winners' exaggerate true lift by 2.5x–9.5x (Winner's Curse!).",
+        labels=("INSIGHT", "WARN"),
+    )
+
+    if plot:
+        set_ggplot_theme()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.5), gridspec_kw={"width_ratios": [1.08, 1.08]})
+
+        # Left panel: Type M Exaggeration Ratio & Power vs True Relative Lift
+        grid_rel = np.linspace(0.002, 0.045, 180)
+        vals = np.array([_retrodesign(r) for r in grid_rel])
+        pwr_curve, ts_curve, tm_curve = vals[:, 0], vals[:, 1], vals[:, 2]
+
+        ax1.plot(grid_rel, tm_curve, color=PALETTE["danger"], lw=2.8, label="Type M Exaggeration Ratio (×)")
+        ax1.axhline(1.0, color="#1A202C", ls="--", lw=1.3, label="Unbiased magnitude (1.0×)")
+        ax1.axvline(0.0284, color=PALETTE["accent"], ls=":", lw=1.8, label="80%-Power MDE (+2.84% → 1.12×)")
+
+        # Highlight 0.50% true lift point (4.84x exaggeration)
+        _, _, tm_05 = _retrodesign(0.005)
+        ax1.scatter([0.005], [tm_05], color=PALETTE["danger"], s=105, zorder=5, edgecolor="white", lw=1.5)
+        ax1.annotate(
+            f"True lift = +0.50% (Power = 7.8%)\nSignificant 'winners' exaggerate by {tm_05:.1f}×\n(avg. reported lift: +{0.005 * tm_05:.2%})",
+            xy=(0.005, tm_05), xytext=(0.011, tm_05 + 1.2),
+            fontsize=8.9, fontweight="bold", color=PALETTE["danger"],
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="white", edgecolor=PALETTE["danger"]),
+            arrowprops=dict(arrowstyle="->", color=PALETTE["danger"], lw=1.5),
+        )
+        ax1.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=1))
+        ax1.set_ylim(0.5, 10.5)
+        _style_ggplot_ax(
+            ax1,
+            title="The Winner's Curse: Type M Error Curve",
+            subtitle="Expected exaggeration E[|lift| | p < 0.05] / true lift",
+            xlabel="True Relative Effect Size",
+            ylabel="Type M Exaggeration Factor (×)",
+        )
+        ax1.legend(loc="upper right")
+
+        # Right panel: Simulated sampling distribution when True Relative Lift = +0.50% (underpowered)
+        true_small = 0.005
+        x_rel = np.linspace(-0.042, 0.052, 800)
+        y_pdf = stats.norm.pdf(x_rel, loc=true_small, scale=se_rel)
+        crit_rel = z_crit * se_rel
+
+        ax2.plot(x_rel, y_pdf, color=PALETTE["control"], lw=2.3, label="Sampling dist. (true = +0.50%)")
+        ax2.fill_between(x_rel, y_pdf, where=(np.abs(x_rel) <= crit_rel), color="#CBD5E0", alpha=0.45,
+                         label="Non-significant (p ≥ 0.05)")
+        ax2.fill_between(x_rel, y_pdf, where=(x_rel > crit_rel), color=PALETTE["danger"], alpha=0.55,
+                         label=f"Type M 'Winner' (avg +{true_small * tm_05:.2%} = {tm_05:.1f}×)")
+        ax2.fill_between(x_rel, y_pdf, where=(x_rel < -crit_rel), color=PALETTE["treatment"], alpha=0.55,
+                         label="Type S (wrong sign: 9.0%)")
+        ax2.axvline(true_small, color=PALETTE["accent"], ls="--", lw=2.0, label="True lift (+0.50%)")
+        ax2.axvline(crit_rel, color="#1A202C", ls=":", lw=1.3)
+        ax2.axvline(-crit_rel, color="#1A202C", ls=":", lw=1.3)
+        ax2.set_ylim(0, max(y_pdf) * 1.48)
+        ax2.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=1))
+        _style_ggplot_ax(
+            ax2,
+            title="Anatomy of Type M & Type S Errors (True Lift = +0.50%)",
+            subtitle="Only estimates exceeding ±1.98% reach p < 0.05 → guaranteed exaggeration",
+            xlabel="Observed Relative Lift",
+            ylabel="Sampling Density",
+        )
+        ax2.legend(loc="upper left", ncol=2, fontsize=8.2)
+
+        _add_caption(fig, "Based on Gelman & Carlin (2014) & Matheus Buniotto (Asaas Engineering Blog)  •  SE(rel. lift) = 1.01%, α = 0.05")
+        plt.tight_layout()
+        plt.show()
+
+    return df_ms

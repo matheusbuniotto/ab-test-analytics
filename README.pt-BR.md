@@ -7,9 +7,15 @@
 
 🇺🇸 [English version (Default)](README.md)
 
-Um projeto completo de experimentação sobre dados reais ([Kaggle](https://www.kaggle.com/datasets/zhangluyuan/ab-testing), ~294 mil usuários): fase de planejamento e hierarquia de métricas, auditoria de qualidade e vazamento entre grupos, verificação de Sample Ratio Mismatch (SRM), três paradigmas estatísticos (frequentista, bootstrap não-paramétrico e Bayesiano), validação cruzada e curva de poder / MDE com [`tea-tasting`](https://github.com/e10v/tea-tasting), além de experimentos com **Randomização por Cluster** e **Controle Sintético** utilizando [`cluster-experiments`](https://david26694.github.io/cluster-experiments/). Todos os gráficos utilizam um tema diagnóstico unificado inspirado em **ggplot2**.
+Um projeto completo de experimentação sobre dados reais ([Kaggle](https://www.kaggle.com/datasets/zhangluyuan/ab-testing), ~294 mil usuários): fase de planejamento e hierarquia de métricas, **auditoria de Erros Tipo M (Magnitude) e Tipo S (Sinal)**, higiene de dados e vazamento entre grupos, verificação de Sample Ratio Mismatch (SRM), três paradigmas estatísticos (frequentista, bootstrap não-paramétrico e Bayesiano), validação cruzada e curva de poder / MDE com [`tea-tasting`](https://github.com/e10v/tea-tasting), além de experimentos com **Randomização por Cluster** e **Controle Sintético** utilizando [`cluster-experiments`](https://david26694.github.io/cluster-experiments/). Todos os gráficos utilizam um tema diagnóstico unificado inspirado em **ggplot2**.
 
 > **Resumo Executivo:** a nova landing page **não** aumentou a conversão (`12.02%` → `11.87%`, `−0.14 pp` absoluto / `−1.20%` relativo, `p = 0.232`). Com 286.690 usuários únicos e limpos (~22 dias de tráfego), o experimento tinha 80% de poder estatístico para detectar um efeito mínimo (MDE) de **±0.34 pp (±2.84% relativo)**, e a análise Bayesiana aponta apenas **11.6% de probabilidade** de a nova página superar o controle. **Recomendação: não implementar a alteração.**
+
+> [!NOTE]
+> **Evolução do Projeto (4 Anos Depois):** A primeira versão deste repositório foi escrita há quase 4 anos como um estudo introdutório de testes A/B no nível do usuário. Desde então, após rodar e liderar times de Dados e Produto em centenas de experimentos em produção, revisitei este projeto para consolidar aprendizados práticos de experimentação em escala:
+> - **Rigor no pré-experimento:** hierarquia de métricas (OEC, métricas diagnósticas e guardrails), escolha entre testes de **Superioridade vs. Não-Inferioridade** e dimensionamento amostral via **MDE**.
+> - **A "Maldição do Vencedor" em testes com baixo poder:** um deep dive em **Erros Tipo M (Magnitude) e Tipo S (Sinal)**, baseado no artigo que escrevi para o blog de Dados e Engenharia do Asaas ([*O Erro Secreto: O Erro Tipo M em Testes A/B*](https://medium.com/estacao-asaas/o-erro-secreto-o-erro-tipo-m-em-testes-a-b-e5593833bc01)).
+> - **Stack moderna de experimentação:** validação cruzada e curvas de poder com [`tea-tasting`](https://github.com/e10v/tea-tasting), além de experimentos sujeitos a efeito de rede/spillover ou lançamentos regionais/por lojas via **Randomização por Cluster (`clustered_ols`)** e **Controle Sintético** com [`cluster-experiments`](https://david26694.github.io/cluster-experiments/).
 
 ---
 
@@ -18,6 +24,7 @@ Um projeto completo de experimentação sobre dados reais ([Kaggle](https://www.
 | Etapa / Método | Métrica Principal | Resultado | Limiar / Intervalo (95%) | Veredito |
 |---|---|---|---|---|
 | **0. Planejamento** | MDE Alvo e Duração | `±0.34 pp` (`±2.84%` rel.) | `N = 286.690` (~22 dias, `80%` poder, `α = 0.05`) | **PRÉ-ESPECIFICADO** |
+| **0.4 Erro Tipo M / S** | Exagero no MDE (`80%`) vs `+0.5%` | `1.12×` (no MDE) vs `4.84×` (em `+0.5%`) | Evita a "Maldição do Vencedor" em efeitos pequenos | **PROTEGIDO EM ≥2.84%** |
 | **1. Higiene dos Dados** | Linhas contaminadas / inconsistentes | `7.788` linhas (`2.64%`) removidas | `0` inconsistências em `286.690` usuários | **PASS** |
 | **2. Teste de SRM** | Divisão Controle / Tratamento | `143.293` vs `143.397` (`0.9993`) | `χ² = 0.0377`, `p = 0.8460` (`> 0.001`) | **PASS** |
 | **3. Frequentista (z-test)** | Lift absoluto / relativo | `−0.14 pp` (`−1.20%`) | IC 95% `[−0.38 pp, +0.09 pp]`, `p = 0.2323` | **NÃO SIGNIFICATIVO** |
@@ -33,8 +40,8 @@ Um projeto completo de experimentação sobre dados reais ([Kaggle](https://www.
 
 | Arquivo | Descrição |
 |---|---|
-| [`analysis.ipynb`](analysis.ipynb) | Notebook completo e executado com fase de planejamento, código, relatórios em texto e gráficos estilo ggplot2 |
-| [`ab_utils.py`](ab_utils.py) | Funções reutilizáveis: tema ggplot2, SRM, IC de Wilson, teste z, bootstrap, teste Bayesiano, `tea-tasting` e `cluster-experiments` |
+| [`analysis.ipynb`](analysis.ipynb) | Notebook completo e executado com fase de planejamento, auditoria Tipo M/S, código, relatórios e gráficos ggplot2 |
+| [`ab_utils.py`](ab_utils.py) | Funções reutilizáveis: tema ggplot2, SRM, IC de Wilson, teste z, bootstrap, Bayesiano, Tipo M/S, `tea-tasting` e `cluster-experiments` |
 | `plots/*.png` | Gráficos diagnósticos de dois painéis em alta resolução (estilo ggplot2) |
 | `data/ab_data.csv` | Dados brutos do experimento (`user_id`, `timestamp`, `group`, `landing_page`, `converted`) |
 | [`README.md`](README.md) | Documentação principal em inglês |
@@ -55,6 +62,7 @@ from ab_utils import (
     bootstrap_ab_test,
     bayesian_ab_test,
     compare_with_tea_tasting,
+    analyze_type_m_s_errors,
     run_cluster_randomization_example,
     run_synthetic_control_example,
 )
@@ -64,6 +72,7 @@ perform_ab_test_analysis(df)               # teste z de duas proporções + grá
 bootstrap_ab_test(df)                      # bootstrap de 10k reamostragens + distribuição do lift
 bayesian_ab_test(df)                       # posterior Beta-Binomial + probabilidade de vitória
 compare_with_tea_tasting(df)               # validação com tea-tasting + curva de poder e MDE
+analyze_type_m_s_errors(df)                # auditoria de Erros Tipo M (exagero) e Tipo S (sinal)
 run_cluster_randomization_example()        # OLS Naive vs. OLS Clusterizado em experimento por lojas
 run_synthetic_control_example()            # Controle Sintético vs. OLS Clusterizado (1 cluster tratado)
 ```
@@ -114,6 +123,34 @@ O **Efeito Mínimo Detectável (MDE)** é o menor ganho real que justifica o lan
 
 > [!IMPORTANT]
 > **Por que não usamos "poder observado pós-teste":** Como destaca Georgiev, calcular o poder estatístico substituindo o efeito ruidoso observado (`−0.14 pp`) após o término do experimento não traz informação válida. Ao auditar um dataset histórico com $N = 286.690$, calculamos o **MDE de sensibilidade retrospectiva (`±0.34 pp` / `±2.84%`)** para responder: *"Qual tamanho de efeito este experimento tinha capacidade real de detectar?"* Como `±2.84%` está abaixo do patamar típico de 3%–5% esperado em mudanças de landing page, o resultado não-significativo (`p = 0.232`) representa uma ausência de efeito bem dimensionada, e não falta de amostra.
+
+#### 0.4 Além dos Erros Tipo I e Tipo II: Erros Tipo M (Magnitude) e Tipo S (Sinal)
+A maioria dos times acompanha apenas os **Erros Tipo I ($\alpha$)** e **Tipo II ($\beta$)**. Porém, uma das armadilhas mais caras que vi liderando times de Dados e Produto — e tema do artigo que escrevi para o blog de Engenharia do Asaas, [***O Erro Secreto: O Erro Tipo M em Testes A/B***](https://medium.com/estacao-asaas/o-erro-secreto-o-erro-tipo-m-em-testes-a-b-e5593833bc01) (baseado em Gelman & Carlin, 2014) — acontece quando um **experimento com baixo poder estatístico dá "sorte" e atinge $p < 0.05$**:
+
+1. **Erro Tipo M (Magnitude / Fator de Exagero, $\mathbb{E}[|\hat{\Delta}| \mid p < 0.05] / |\Delta_{\text{real}}|$):** Como a barreira de significância exige $|\hat{\Delta}| > 1.96 \times \text{EP}$ (`±1.98%` relativo neste dataset), qualquer efeito verdadeiro pequeno (ex.: `+0.50%`) que alcance $p < 0.05$ **obrigatoriamente** sofreu um pico de ruído amostral. Condicionado a ser estatisticamente significativo, o lift reportado será **garantidamente exagerado** — chegando a **2.5× a 9.5× o efeito real** (*Maldição do Vencedor*). Quando o time soma esses ganhos inflados no planejamento financeiro, a conta nunca fecha no P&L.
+2. **Erro Tipo S (Sinal, $P(\text{sinal oposto} \mid p < 0.05)$):** Quando o poder estatístico é muito baixo, um resultado estatisticamente significativo tem alta chance de apontar na **direção oposta** ao efeito real (ex.: para um efeito verdadeiro de `+0.25%`, quase **24% dos resultados significativos terão sinal negativo**!).
+
+Executando `analyze_type_m_s_errors(ab_clean)`, quantificamos exatamente o perfil de risco para o erro padrão do nosso experimento ($\text{EP}_{\text{rel}} = 1.01\%$):
+
+```text
+╭────────────────────────────────────────────────────────────────────╮
+│ TYPE M (MAGNITUDE) & TYPE S (SIGN) ERROR AUDIT                     │
+├────────────────────────────────────────────────────────────────────┤
+│  True Rel. Lift True Abs. Lift Power Type S (Wrong Sign) Type M (Exaggeration) Avg. Winner Reported│
+│          +0.25%       +0.03 pp  5.7%              23.92%                 9.52x               +2.38%│
+│          +0.50%       +0.06 pp  7.8%               8.98%                 4.84x               +2.42%│
+│          +1.00%       +0.12 pp 16.7%               0.95%                 2.52x               +2.52%│
+│          +1.50%       +0.18 pp 31.7%               0.09%                 1.76x               +2.64%│
+│          +2.00%       +0.24 pp 50.8%               0.01%                 1.40x               +2.79%│
+│          +2.84%       +0.34 pp 80.2%               0.00%                 1.12x               +3.19%│
+│          +5.00%       +0.60 pp 99.9%               0.00%                 1.00x               +5.00%│
+├────────────────────────────────────────────────────────────────────┤
+│  [INSIGHT] Underpowered 'winners' exaggerate true lift by 2.5x–9.5x (Winner's Curse!).│
+╰────────────────────────────────────────────────────────────────────╯
+```
+![Erros Tipo M e Tipo S](plots/type_m_s_errors.png)
+
+- **Lição prática para lideranças de Dados e Produto:** Dimensionar o experimento para $\ge 80\%$ de poder em um MDE realista (`+2.84%` aqui) não serve apenas para evitar falsos negativos ($\beta$) — ele reduz o **exagero do Erro Tipo M para apenas `1.12×`** e zera o **Erro Tipo S (`0.00%`)**, garantindo que os ganhos reportados ao negócio sejam reais.
 
 ---
 
@@ -265,8 +302,10 @@ Adaptado do [guia de Synthetic Control do `cluster-experiments`](https://david26
 ---
 
 ## Referências
+- [O Erro Secreto: O Erro Tipo M em Testes A/B](https://medium.com/estacao-asaas/o-erro-secreto-o-erro-tipo-m-em-testes-a-b-e5593833bc01) — Matheus Buniotto (*Estação Asaas / Blog de Dados e Engenharia do Asaas*)
 - [Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing](https://www.amazon.com/Trustworthy-Online-Controlled-Experiments-Practical-ebook/dp/B0845Y3DJV) — Ron Kohavi, Diane Tang, Ya Xu
 - [Statistical Methods in Online A/B Testing: Statistics for data-driven business decisions and risk management in e-commerce](https://www.amazon.com/Statistical-Methods-Online-Testing-data-driven/dp/1694079725) — Georgi Z. Georgiev
+- [Beyond Power Calculations: Assessing Type S (Sign) and Type M (Magnitude) Errors](https://doi.org/10.1177/1745691614551642) — Andrew Gelman, John Carlin (2014)
 - [`tea-tasting`: statistical analysis of A/B tests in Python](https://github.com/e10v/tea-tasting) — Evgeny Ivanov
 - [`cluster-experiments`: Cluster Randomization](https://david26694.github.io/cluster-experiments/examples/cluster_randomization.html) & [Synthetic Control](https://david26694.github.io/cluster-experiments/synthetic_control.html) — David Masip
 - [Detecting and avoiding bucket imbalance in A/B tests](https://blog.twitter.com/engineering/en_us/a/2015/detecting-and-avoiding-bucket-imbalance-in-ab-tests) — Twitter Engineering
