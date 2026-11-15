@@ -1,8 +1,8 @@
-pandas
-numpy
-scipy
-matplotlib
-seaborn
-jupyter
-tea-tasting
-cluster-experiments
+pandas==3.1.1
+numpy==2.5.4
+scipy==1.18.1
+matplotlib==3.11.2
+seaborn==0.13.2
+jupyter==1.1.1
+tea-tasting==2.0.0
+cluster-experiments==0.31.0
